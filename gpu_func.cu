@@ -33,11 +33,64 @@ int useless_gpu_add_one (int t)
 	return result;
 }
 
+/*
+Kernel function called by my GEMM
+*/
+template <int side>
+__global__
+void myGEMM_kernel(double* A, double* B, double* C, const double alpha, const double beta, 
+				   const int M, const int N, const int K) {
+	// side is BLOCK_SIZE
+	// N is C.stride
+	// N is B.stride
+	// K is A.stride
+
+	const int block_row = blockDim.y;
+	const int block_col = blockDim.x;
+
+	const int row = threadIdx.y;
+	const int col = threadIdx.x;
+
+	double Cval = 0;
+
+    // get pointer into sub matrix for this kernel
+	double* Csub = &((*C)[N * side * block_row + side * block_col]);
+
+	for (int k = 0; k < (K / side); ++k) {
+
+		// index into sub
+		double* Asub = &((*A)[K * side * block_row + side * k]);
+		double* Bsub = B[N * side * k + side * block_col];
+
+		// allocate shared memory
+		__shared__ double Ashared[side][side];
+		__shared__ double Bshared[side][side];
+
+		Ashared[row][col] = (*Asub)[K * row + col]
+		Bshared[row][col] = (*Bsub)[N * row + col]
+	}
+
+}
+
 /* 
 Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C 
 */
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
 	/* TODO: Write an efficient GEMM implementation on GPU */
+
+	// A, B, C are already memcopied to device ie we already have device pointers
+	// first set up threads_per_block and blocks_per_grid
+	int side = 32;
+	int block_x = (N + side) / side;
+	int block_y = (M + side) / side;
+	dim3 threads_per_block(side, side);
+	dim3 blocks_per_grid(block_x, block_y);
+
+	// set up streams ?
+	myGEMM_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
+		(A, B, C, *alpha, *beta, M, N, K);
+
+
 
 	return 1;
 }
