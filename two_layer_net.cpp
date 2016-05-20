@@ -308,6 +308,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
        * 4. update local network coefficient at each node
        */
 
+       // should I be rewriting subroutines to call myGEMM (yes)
+       // when does data get put on the GPU (before the beginning of this for loop)
+       // when does data come back off the GPU (before the end of this for loop)
+
       if(print_every <= 0)
         print_flag = batch == 0;
       else
