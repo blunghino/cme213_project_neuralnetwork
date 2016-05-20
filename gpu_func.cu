@@ -38,8 +38,8 @@ Kernel function called by my GEMM
 */
 template <int side>
 __global__
-void myGEMM_kernel(double* A, double* B, double* C, const double alpha, const double beta, 
-				   const int M, const int N, const int K) {
+void myGEMM_kernel(double* A, double* B, double* C, 
+				   double alpha, double beta, int N, int K) {
 	// side is BLOCK_SIZE
 	// N is C.stride
 	// N is B.stride
@@ -54,20 +54,39 @@ void myGEMM_kernel(double* A, double* B, double* C, const double alpha, const do
 	double Cval = 0;
 
     // get pointer into sub matrix for this kernel
-	double* Csub = &((*C)[N * side * block_row + side * block_col]);
+	double* Csub = &(C[N * side * block_row + side * block_col]);
+	// this location will be accessed several times
+	const int C_idx = N * row + col;
 
+	// loop over sub matrices
 	for (int k = 0; k < (K / side); ++k) {
 
-		// index into sub
-		double* Asub = &((*A)[K * side * block_row + side * k]);
-		double* Bsub = B[N * side * k + side * block_col];
+		// address to location of sub
+		double* Asub = &(A[K * side * block_row + side * k]);
+		double* Bsub = &(B[N * side * k + side * block_col]);
 
 		// allocate shared memory
 		__shared__ double Ashared[side][side];
 		__shared__ double Bshared[side][side];
 
-		Ashared[row][col] = (*Asub)[K * row + col]
-		Bshared[row][col] = (*Bsub)[N * row + col]
+		// assign elements to shared memory
+		Ashared[row][col] = Asub[K * row + col];
+		Bshared[row][col] = Bsub[C_idx];
+
+		__syncthreads();
+
+		// do matrix multiply
+		for (int idx = 0; idx < side; ++idx) {
+			Cval += Ashared[row][idx] * Bshared[idx][col];
+		}
+
+		__syncthreads();
+
+		// evaluate the rest of the GEMM equation
+		Cval = alpha * Cval + beta * Csub[C_idx];
+		// set value
+		Csub[C_idx] = Cval;
+
 	}
 
 }
@@ -80,17 +99,17 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 	// A, B, C are already memcopied to device ie we already have device pointers
 	// first set up threads_per_block and blocks_per_grid
-	int side = 32;
+	const int side = 32;
 	int block_x = (N + side) / side;
 	int block_y = (M + side) / side;
 	dim3 threads_per_block(side, side);
 	dim3 blocks_per_grid(block_x, block_y);
 
-	// set up streams ?
+	// set up streams ??
 	myGEMM_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
-		(A, B, C, *alpha, *beta, M, N, K);
+		(A, B, C, *alpha, *beta, N, K);
 
-
+	check_launch("myGEMM_kernel");
 
 	return 1;
 }
