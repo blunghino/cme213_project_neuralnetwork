@@ -300,18 +300,51 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   for (int epoch = 0; epoch < epochs; ++epoch) {
     int num_batches = (N + batch_size - 1)/batch_size;
     for (int batch = 0; batch < num_batches; ++batch) {
+      int last_row = std::min ((batch + 1)*batch_size, N-1);
+      arma::mat X_batch = X.rows (batch * batch_size, last_row);
+      arma::mat y_batch = y.rows (batch * batch_size, last_row);
+
+      // to MPI scatter need raw data pointers 
+      double* X_batch_mem = X_batch.memptr();
+      double* y_batch_mem = y_batch.memptr();
+
       /*
        * Possible Implementation:
        * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
+        from each MPI node do cuda memcpy to each GPU with function written in gpu_func.cu
+        NOW data is on GPU and we do as much with it as possible before cudamemcpy back
        * 2. compute each sub-batch of images' contribution to network coefficient updates
+        2 happens on GPU as much as possible. 
+        we are now working in a subroutine in gpu_func.cu
+        rewrite feedforward etc as __device__ or __global__ kernels
+        before 3 cudamemcpy back to cpu nodes
        * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
        * 4. update local network coefficient at each node
        */
 
-       // should I be rewriting subroutines to call myGEMM (yes)
-       // when does data get put on the GPU (before the beginning of this for loop)
-       // when does data come back off the GPU (before the end of this for loop)
+       // optimizing data transfers is the tricky part. generally want to do as few as possible
+       // when does data get put on the GPU (before the beginning of this for loop?)
+       // when does data come back off the GPU (at least once before the end of this for loop to update)
 
+       // subdivide here
+      /*
+      MPI_Scatter(
+        void* send_data,
+        int send_count,
+        MPI_Datatype send_datatype,
+        void* recv_data,
+        int recv_count,
+        MPI_Datatype recv_datatype,
+        int root,
+        MPI_Comm communicator)
+        */
+      
+      // this function will feedforward, backprop, (and gradient descent?) on the scattered chunk of data
+      int gpu_success = gpu_train(X_batch_mem, y_batch_mem);
+
+      // MPI_Allreduce();
+
+      
       if(print_every <= 0)
         print_flag = batch == 0;
       else

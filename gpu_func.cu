@@ -113,3 +113,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 	return 1;
 }
+
+int gpu_train(double* X_chunk, double* y_chunk) {
+	return 1;
+}
