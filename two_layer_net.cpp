@@ -86,7 +86,7 @@ void feedforward (TwoLayerNet &nn, const arma::mat& X, struct cache& cache)
   cache.z.resize(2);
   cache.a.resize(2);
 
-  // std::cout << W[0].n_rows << "\n";
+  // std::cout << "W[0].n_rows " << W[0].n_rows << "\n";
   assert (X.n_cols == nn.W[0].n_cols);
   cache.X = X;
   int N = X.n_rows;
@@ -108,6 +108,19 @@ void feedforward (TwoLayerNet &nn, const arma::mat& X, struct cache& cache)
   arma::mat a2;
   softmax (z2, a2);
   cache.a[1] = cache.yc = a2;
+
+/*
+  std::cout << "X " << arma::size(X) << std::endl;
+  std::cout << "z1 " << arma::size(z1) << std::endl;
+  std::cout << "z2 " << arma::size(z2) << std::endl;
+  std::cout << "a1 " << arma::size(a1) << std::endl;
+  std::cout << "a2 " << arma::size(a2) << std::endl;
+  std::cout << "nn.W[0] " << arma::size(nn.W[0]) << std::endl;
+  std::cout << "nn.W[1] " << arma::size(nn.W[1]) << std::endl;
+  std::cout << "nn.b[0] " << arma::size(nn.b[0]) << std::endl;
+  std::cout << "nn.b[1] " << arma::size(nn.b[1]) << std::endl;
+*/
+  
 }
 
 /*
@@ -133,6 +146,18 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
 
   bpgrads.dW[0] = dz1.t() * bpcache.X + reg * nn.W[0];
   bpgrads.db[0] = arma::sum(dz1, 0);
+
+/*
+  std::cout << "y " << arma::size(y) << std::endl;
+  std::cout << "da1 " << arma::size(da1) << std::endl;
+  std::cout << "dz1 " << arma::size(dz1) << std::endl;
+  std::cout << "bpgrads.dW[0] " << arma::size(bpgrads.dW[0]) << std::endl;
+  std::cout << "bpgrads.dW[1] " << arma::size(bpgrads.dW[1]) << std::endl;
+  std::cout << "bpgrads.db[0] " << arma::size(bpgrads.db[0]) << std::endl;
+  std::cout << "bpgrads.db[1] " << arma::size(bpgrads.db[1]) << std::endl;
+  std::cout << "diff " << arma::size(diff) << std::endl;
+*/
+
 }
 
 /*

@@ -114,9 +114,19 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	return 1;
 }
 
-int gpu_train(double* X, double* y, double* W0_chunk) {
+// x_chunk and y_chunk have 
+int gpu_train(double* X_chunk, double* y_chunk, double* W0) {
 	double* d_X;
-	checkCudaErrors(cudaMalloc(&d_X, sizeof(double)));
+	size_t X_size = sizeof(double);
+	checkCudaErrors(cudaMalloc(&d_X, X_size));
+	checkCudaErrors(cudaMemcpy(d_X, X_chunk, X_size, cudaMemcpyHostToDevice));
+
+	// feedforward steps to calc a1, a2, z1, z2 all on device
+
+	// backprop steps to calc dW0/1 and db0/1 all on device
+	// calls to myGEMM_kernel through myGEMM or directly?
+	// calls to other __global__ functions?
+
 	cudaFree(d_X);
 	return 1;
 }
