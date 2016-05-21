@@ -281,6 +281,14 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   MPI_SAFE_CALL (MPI_Comm_size (MPI_COMM_WORLD, &num_procs));
   MPI_SAFE_CALL (MPI_Comm_rank (MPI_COMM_WORLD, &rank));
 
+  if (rank == 0) {
+    int N = X.n_rows;
+    int K_y = y.n_cols;
+    int K_x = X.n_cols;
+  }
+  else {
+    int N = 0; int K_y = 0; int K_x = 0;
+  }
   int N = (rank == 0)?X.n_rows:0;
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
@@ -300,13 +308,11 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   for (int epoch = 0; epoch < epochs; ++epoch) {
     int num_batches = (N + batch_size - 1)/batch_size;
     for (int batch = 0; batch < num_batches; ++batch) {
+
+      // subset by row number
       int last_row = std::min ((batch + 1)*batch_size, N-1);
       arma::mat X_batch = X.rows (batch * batch_size, last_row);
       arma::mat y_batch = y.rows (batch * batch_size, last_row);
-
-      // to MPI scatter need raw data pointers 
-      double* X_batch_mem = X_batch.memptr();
-      double* y_batch_mem = y_batch.memptr();
 
       /*
        * Possible Implementation:
@@ -326,8 +332,16 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
        // when does data get put on the GPU (before the beginning of this for loop?)
        // when does data come back off the GPU (at least once before the end of this for loop to update)
 
-       // subdivide here
-      /*
+       // subdivide neural network into n_procs here
+       // to do this we have to get pointers to raw data for arma::mat for W and b 
+      double* X_batch_mem = X_batch.memptr();
+      double* y_batch_mem = y_batch.memptr();
+      double* W0_mem = nn.W[0].memptr();
+      double* W1_mem = nn.W[1].memptr();
+      double* b0_mem = nn.b[0].memptr();
+      double* b1_mem = nn.b[1].memptr();
+
+      /* this will be called multiple times for W0, b0, W1, b1, X, y
       MPI_Scatter(
         void* send_data,
         int send_count,
@@ -340,11 +354,11 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
         */
       
       // this function will feedforward, backprop, (and gradient descent?) on the scattered chunk of data
-      int gpu_success = gpu_train(X_batch_mem, y_batch_mem);
+      int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem);
 
       // MPI_Allreduce();
 
-      
+
       if(print_every <= 0)
         print_flag = batch == 0;
       else

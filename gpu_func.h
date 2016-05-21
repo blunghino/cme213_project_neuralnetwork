@@ -47,6 +47,6 @@ int useless_gpu_add_one (int t);
 
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K);
 
-int gpu_train(double* X_chunk, double* y_chunk);
+int gpu_train(double* X, double* y, double* W0_chunk);
 
 #endif

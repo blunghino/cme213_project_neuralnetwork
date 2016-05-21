@@ -114,6 +114,9 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	return 1;
 }
 
-int gpu_train(double* X_chunk, double* y_chunk) {
+int gpu_train(double* X, double* y, double* W0_chunk) {
+	double* d_X;
+	checkCudaErrors(cudaMalloc(&d_X, sizeof(double)));
+	cudaFree(d_X);
 	return 1;
 }
