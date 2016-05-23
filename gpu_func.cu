@@ -39,11 +39,11 @@ Kernel function called by my GEMM
 template <int side>
 __global__
 void myGEMM_kernel(double* A, double* B, double* C, 
-				   double alpha, double beta, int N, int K) {
+				   double alpha, double beta, int M, int N, int K) {
 	// side is BLOCK_SIZE
-	// N is C.stride
-	// N is B.stride
-	// K is A.stride
+	// M is C.stride
+	// K is B.stride
+	// M is A.stride
 
 	const int block_row = blockDim.y;
 	const int block_col = blockDim.x;
@@ -53,25 +53,40 @@ void myGEMM_kernel(double* A, double* B, double* C,
 
 	double Cval = 0;
 
-    // get pointer into sub matrix for this kernel
-	double* Csub = &(C[N * side * block_row + side * block_col]);
 	// this location will be accessed several times
-	const int C_idx = N * row + col;
+	const int C_sub_idx = M * col + row;
+	// check in bounds
+	if (C_sub_idx >= M * N) {
+		return;
+	}
+	
+	int C_idx = M * side * block_col + side * block_row;
+
+    // get pointer into sub matrix for this kernel
+	double* Csub = &(C[C_idx]);
+
+	int B_size = K * N;
 
 	// loop over sub matrices
-	for (int k = 0; k < (K / side); ++k) {
+	for (int k = 0; k < ((K + side - 1) / side); ++k) {
+
+		//  CHECK IN BOUNDS
+		int B_idx = K * side * block_col + side * k;
+		if (B_idx >= B_size) {
+			return;
+		}
 
 		// address to location of sub
-		double* Asub = &(A[K * side * block_row + side * k]);
-		double* Bsub = &(B[N * side * k + side * block_col]);
+		double* Asub = &(A[C_idx]);
+		double* Bsub = &(B[B_idx]);
 
 		// allocate shared memory
 		__shared__ double Ashared[side][side];
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		Ashared[row][col] = Asub[K * row + col];
-		Bshared[row][col] = Bsub[C_idx];
+		Ashared[row][col] = Asub[C_sub_idx];
+		Bshared[row][col] = Bsub[K * col + row];
 
 		__syncthreads();
 
@@ -83,9 +98,9 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		__syncthreads();
 
 		// evaluate the rest of the GEMM equation
-		Cval = alpha * Cval + beta * Csub[C_idx];
+		Cval = alpha * Cval + beta * Csub[C_sub_idx];
 		// set value
-		Csub[C_idx] = Cval;
+		Csub[C_sub_idx] = Cval;
 
 	}
 
@@ -107,14 +122,14 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 	// set up streams ??
 	myGEMM_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
-		(A, B, C, *alpha, *beta, N, K);
+		(A, B, C, *alpha, *beta, M, N, K);
 
 	check_launch("myGEMM_kernel");
 
 	return 1;
 }
 
-// x_chunk and y_chunk have 
+// x_chunk and y_chunk have been subdivided by rows
 int gpu_train(double* X_chunk, double* y_chunk, double* W0) {
 	double* d_X;
 	size_t X_size = sizeof(double);

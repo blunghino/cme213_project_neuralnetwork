@@ -45,6 +45,10 @@ inline double stop_timer(event_pair * p)
 
 int useless_gpu_add_one (int t);
 
+__global__
+void myGEMM_kernel(double* A, double* B, double* C, 
+           double alpha, double beta, int M, int N, int K);
+
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K);
 
 int gpu_train(double* X_chunk, double* y_chunk, double* W0);

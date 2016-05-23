@@ -120,7 +120,7 @@ void feedforward (TwoLayerNet &nn, const arma::mat& X, struct cache& cache)
   std::cout << "nn.b[0] " << arma::size(nn.b[0]) << std::endl;
   std::cout << "nn.b[1] " << arma::size(nn.b[1]) << std::endl;
 */
-  
+
 }
 
 /*
@@ -248,7 +248,7 @@ void train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double lear
     int num_batches = (int) ceil ( N / (float) batch_size);    
 
     for (int batch = 0; batch < num_batches; ++batch) {
-      int last_row = std::min ((batch + 1)*batch_size, N-1);
+      int last_row = std::min((batch + 1)*batch_size-1, N-1);
       arma::mat X_batch = X.rows (batch * batch_size, last_row);
       arma::mat y_batch = y.rows (batch * batch_size, last_row);
 
@@ -335,7 +335,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
     for (int batch = 0; batch < num_batches; ++batch) {
 
       // subset by row number
-      int last_row = std::min ((batch + 1)*batch_size, N-1);
+      int last_row = std::min((batch + 1)*batch_size-1, N-1);
       arma::mat X_batch = X.rows (batch * batch_size, last_row);
       arma::mat y_batch = y.rows (batch * batch_size, last_row);
 
