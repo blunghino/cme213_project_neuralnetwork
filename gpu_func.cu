@@ -67,8 +67,8 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	const int Asub_idx = M * col + row;
 	const int Bsub_idx = K * col + row;
 
-	printf("\n\n block_row: %d \n block_col: %d \n row: %d \n col: %d \n Asub_idx: %d \n Bsub_idx %d \n",
-	       block_row, block_col, row, col, Asub_idx, Bsub_idx);
+	// printf("\n\n block_row: %d \n block_col: %d \n row: %d \n col: %d \n Asub_idx: %d \n Bsub_idx %d \n",
+	//        block_row, block_col, row, col, Asub_idx, Bsub_idx);
 
 	// check in bounds
 	if (Asub_idx >= A_size || Bsub_idx >= B_size) {
@@ -112,14 +112,14 @@ void myGEMM_kernel(double* A, double* B, double* C,
 
 		__syncthreads();
 
-		// evaluate the rest of the GEMM equation
-		Cval = alpha * Cval + beta * Csub[Asub_idx];
-		// set value
-		Csub[Asub_idx] = Cval;
-		printf("\n\n loop \n block_row: %d \n block_col: %d \n row: %d \n col: %d \n A_idx: %d \n B_idx: %d \n k%d \n idx_check: %d \n",
-	           block_row, block_col, row, col, A_idx, B_idx, k, idx_check);
-	}
 
+		// printf("\n\n loop \n block_row: %d \n block_col: %d \n row: %d \n col: %d \n A_idx: %d \n B_idx: %d \n k%d \n idx_check: %d \n",
+	 //           block_row, block_col, row, col, A_idx, B_idx, k, idx_check);
+	}
+	// evaluate the rest of the GEMM equation
+	Cval = alpha * Cval + beta * Csub[Asub_idx];
+	// set value
+	Csub[Asub_idx] = Cval;
 }
 
 /* 
