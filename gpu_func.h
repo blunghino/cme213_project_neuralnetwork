@@ -51,6 +51,6 @@ void myGEMM_kernel(double* A, double* B, double* C,
 
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K);
 
-int gpu_train(double* X_chunk, double* y_chunk, double* W0);
-
+int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
+        const int n_images, const int n_0, const int n_1, const int n_2);
 #endif

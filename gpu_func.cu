@@ -52,32 +52,31 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	const int col = threadIdx.x;
 
 	double Cval = 0;
-
-	// this location will be accessed several times
-	const int C_sub_idx = M * col + row;
-	// check in bounds
-	if (C_sub_idx >= M * N) {
+	
+	const int C_idx = M * side * block_col + side * block_row;
+	if (C_idx >= M * N) {
 		return;
 	}
-	
-	int C_idx = M * side * block_col + side * block_row;
 
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
 
-	int B_size = K * N;
+	const int B_size = K * N;
+	const int A_size = M * K;
+	const int sub_idx = side * col + row;
 
-	// loop over sub matrices
+	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
 
 		//  CHECK IN BOUNDS
 		int B_idx = K * side * block_col + side * k;
-		if (B_idx >= B_size) {
+		int A_idx = M * side * k + side * block_row;
+		if (B_idx >= B_size || A_idx >= A_size) {
 			return;
 		}
 
 		// address to location of sub
-		double* Asub = &(A[C_idx]);
+		double* Asub = &(A[A_idx]);
 		double* Bsub = &(B[B_idx]);
 
 		// allocate shared memory
@@ -85,8 +84,8 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		Ashared[row][col] = Asub[C_sub_idx];
-		Bshared[row][col] = Bsub[K * col + row];
+		Ashared[row][col] = Asub[sub_idx];
+		Bshared[row][col] = Bsub[sub_idx];
 
 		__syncthreads();
 
@@ -98,9 +97,9 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		__syncthreads();
 
 		// evaluate the rest of the GEMM equation
-		Cval = alpha * Cval + beta * Csub[C_sub_idx];
+		Cval = alpha * Cval + beta * Csub[sub_idx];
 		// set value
-		Csub[C_sub_idx] = Cval;
+		Csub[sub_idx] = Cval;
 
 	}
 
@@ -114,10 +113,16 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 	// A, B, C are already memcopied to device ie we already have device pointers
 	// first set up threads_per_block and blocks_per_grid
-	const int side = 32;
-	int block_x = (N + side) / side;
-	int block_y = (M + side) / side;
-	dim3 threads_per_block(side, side);
+	const int side = 16;
+
+	const int n_threads_per_block = 256;
+	int threads_x = side;
+	int threads_y = side;
+
+	int block_x = (N + threads_x - 1) / threads_x;
+	int block_y = (M + threads_y - 1) / threads_y;
+
+	dim3 threads_per_block(threads_x, threads_y);
 	dim3 blocks_per_grid(block_x, block_y);
 
 	// set up streams ??
@@ -129,12 +134,59 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	return 1;
 }
 
-// x_chunk and y_chunk have been subdivided by rows
-int gpu_train(double* X_chunk, double* y_chunk, double* W0) {
+// X and y have been subdivided
+int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
+			  const int n_images, const int n_0, const int n_1, const int n_2) {
+
+	// create pointers
 	double* d_X;
-	size_t X_size = sizeof(double);
+	double* d_y;
+	double* d_W0;
+	double* d_b0;
+	double* d_W1;
+	double* d_b1;
+	// data only on device
+	double* d_a1;
+	double* d_a2;
+	double* d_z1;
+	double* d_z2;
+
+	// calc sizes
+	const size_t size_d = sizeof(double);
+	const size_t X_size = n_images * n_0 * size_d; // 800 x 784
+	const size_t y_size = n_images * n_2 * size_d; // 800 x 10
+	const size_t W0_size = n_1 * n_0 * size_d; // 100 x 784
+	const size_t W1_size = n_2 * n_1 * size_d; // 10 x 100
+	const size_t b0_size = n1 * size_d; // 1 x 100
+	const size_t b1_size = n2 * size_d; // 1 x 10
+	const size_t a1_size = n_images * n_1 * size_d; // 800 x 100
+	const size_t a2_size = n_images * n_2 * size_d; // 800 x 10
+	const size_t z1_size = n_images * n_1 * size_d; // 800 x 100
+	const size_t z2_size = n_images * n_2 * size_d; // 800 x 10
+
+	// malloc
 	checkCudaErrors(cudaMalloc(&d_X, X_size));
-	checkCudaErrors(cudaMemcpy(d_X, X_chunk, X_size, cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMalloc(&d_y, y_size));
+	checkCudaErrors(cudaMalloc(&d_W0, W0_size));
+	checkCudaErrors(cudaMalloc(&d_W1, W1_size));
+	checkCudaErrors(cudaMalloc(&d_b0, b0_size));
+	checkCudaErrors(cudaMalloc(&d_b1, b1_size));
+	checkCudaErrors(cudaMalloc(&d_a1, a1_size));
+	checkCudaErrors(cudaMalloc(&d_a2, a2_size));
+	checkCudaErrors(cudaMalloc(&d_z1, z1_size));
+	checkCudaErrors(cudaMalloc(&d_z2, z2_size));
+
+	// memcpy
+	cudaMemcpy(d_X, X, X_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_y, y, y_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_W0, W0, W0_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_W1, W1, W1_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_b0, b0, b0_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_b1, b1, b1_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_a1, a1, a1_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_a2, a2, a2_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_z1, z1, z1_size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_z2, z2, z2_size, cudaMemcpyHostToDevice);	
 
 	// feedforward steps to calc a1, a2, z1, z2 all on device
 
@@ -142,6 +194,17 @@ int gpu_train(double* X_chunk, double* y_chunk, double* W0) {
 	// calls to myGEMM_kernel through myGEMM or directly?
 	// calls to other __global__ functions?
 
+	// free!
 	cudaFree(d_X);
+	cudaFree(d_y);
+	cudaFree(d_W0);
+	cudaFree(d_W1);
+	cudaFree(d_b0);
+	cudaFree(d_b1);
+	cudaFree(d_a1);
+	cudaFree(d_a2);
+	cudaFree(d_z1);
+	cudaFree(d_z2);
+
 	return 1;
 }

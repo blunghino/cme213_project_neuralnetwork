@@ -306,15 +306,16 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   MPI_SAFE_CALL (MPI_Comm_size (MPI_COMM_WORLD, &num_procs));
   MPI_SAFE_CALL (MPI_Comm_rank (MPI_COMM_WORLD, &rank));
 
+  arma::mat X_ = X.t();
+  arma::mat y_ = y.t();
+
   if (rank == 0) {
-    int N = X.n_rows;
-    int K_y = y.n_cols;
-    int K_x = X.n_cols;
+    const int N = X.n_cols;
   }
   else {
-    int N = 0; int K_y = 0; int K_x = 0;
+    const int N = 0;
   }
-  int N = (rank == 0)?X.n_rows:0;
+
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
   std::ofstream error_file;
@@ -331,14 +332,15 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   int iter = 0;
 
   for (int epoch = 0; epoch < epochs; ++epoch) {
-    int num_batches = (N + batch_size - 1)/batch_size;
+    int num_batches = (N + batch_size - 1) / batch_size;
     for (int batch = 0; batch < num_batches; ++batch) {
 
       // subset by row number
-      int last_row = std::min((batch + 1)*batch_size-1, N-1);
-      arma::mat X_batch = X.rows (batch * batch_size, last_row);
-      arma::mat y_batch = y.rows (batch * batch_size, last_row);
+      int last_col = std::min((batch + 1)*batch_size-1, N-1);
+      arma::mat X_batch = X.cols (batch * batch_size, last_col);
+      arma::mat y_batch = y.cols (batch * batch_size, last_col);
 
+      // transpose?
       /*
        * Possible Implementation:
        * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
@@ -378,11 +380,17 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
         MPI_Comm communicator)
         */
       
-      // this function will feedforward, backprop, (and gradient descent?) on the scattered chunk of data
-      int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem);
+      // dimensions
+      int n_images = (batch_size + num_procs - 1) / num_procs;
+      int n_0 = X.n_rows;
+      int n_1 = nn.W[0].n_rows;
+      int n_2 = y.n_rows;
+      // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
+      int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
+                                  n_images, n_0, n_1, n_2);
 
       // MPI_Allreduce();
-
+      // update.
 
       if(print_every <= 0)
         print_flag = batch == 0;
