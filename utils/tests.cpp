@@ -6,7 +6,7 @@
 #include<iomanip>
 using namespace std;
 
-#define SCALE 1         // Factor to SCALE the GEMM problem size by
+#define SCALE .03         // Factor to SCALE the GEMM problem size by
 #define NUM_ITERS 10    // Number of GEMMs run for timing purposes
 #define GEMM_TOL 1e-12  // Tolerance for GEMM comparison
 

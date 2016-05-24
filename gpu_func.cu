@@ -44,9 +44,8 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	// M is C.stride
 	// K is B.stride
 	// M is A.stride
-
-	const int block_row = blockDim.y;
-	const int block_col = blockDim.x;
+	const int block_row = blockIdx.y;
+	const int block_col = blockIdx.x;
 
 	const int row = threadIdx.y;
 	const int col = threadIdx.x;
@@ -54,7 +53,9 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	double Cval = 0;
 	
 	const int C_idx = M * side * block_col + side * block_row;
+	// (probably don't need)
 	if (C_idx >= M * N) {
+		printf("uh oh");
 		return;
 	}
 
@@ -63,15 +64,25 @@ void myGEMM_kernel(double* A, double* B, double* C,
 
 	const int B_size = K * N;
 	const int A_size = M * K;
-	const int sub_idx = side * col + row;
+	const int Asub_idx = M * col + row;
+	const int Bsub_idx = K * col + row;
+
+	printf("\n\n block_row: %d \n block_col: %d \n row: %d \n col: %d \n Asub_idx: %d \n Bsub_idx %d \n",
+	       block_row, block_col, row, col, Asub_idx, Bsub_idx);
+
+	// check in bounds
+	if (Asub_idx >= A_size || Bsub_idx >= B_size) {
+		return;	
+	}
 
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
 
-		//  CHECK IN BOUNDS
+		//  CHECK IN BOUNDS (probably don't need)
 		int B_idx = K * side * block_col + side * k;
 		int A_idx = M * side * k + side * block_row;
 		if (B_idx >= B_size || A_idx >= A_size) {
+			printf("uh oh 2");
 			return;
 		}
 
@@ -84,23 +95,29 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		Ashared[row][col] = Asub[sub_idx];
-		Bshared[row][col] = Bsub[sub_idx];
+		Ashared[row][col] = Asub[Asub_idx];
+		Bshared[row][col] = Bsub[Bsub_idx];
 
 		__syncthreads();
+		
+		const int idx_check = side * k;
 
 		// do matrix multiply
 		for (int idx = 0; idx < side; ++idx) {
-			Cval += Ashared[row][idx] * Bshared[idx][col];
+			// bounds check
+			if (idx + idx_check < K) {
+				Cval += Ashared[row][idx] * Bshared[idx][col];
+			}
 		}
 
 		__syncthreads();
 
 		// evaluate the rest of the GEMM equation
-		Cval = alpha * Cval + beta * Csub[sub_idx];
+		Cval = alpha * Cval + beta * Csub[Asub_idx];
 		// set value
-		Csub[sub_idx] = Cval;
-
+		Csub[Asub_idx] = Cval;
+		printf("\n\n loop \n block_row: %d \n block_col: %d \n row: %d \n col: %d \n A_idx: %d \n B_idx: %d \n k%d \n idx_check: %d \n",
+	           block_row, block_col, row, col, A_idx, B_idx, k, idx_check);
 	}
 
 }
@@ -131,7 +148,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 	check_launch("myGEMM_kernel");
 
-	return 1;
+	return 0;
 }
 
 // X and y have been subdivided
@@ -157,8 +174,8 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 	const size_t y_size = n_images * n_2 * size_d; // 800 x 10
 	const size_t W0_size = n_1 * n_0 * size_d; // 100 x 784
 	const size_t W1_size = n_2 * n_1 * size_d; // 10 x 100
-	const size_t b0_size = n1 * size_d; // 1 x 100
-	const size_t b1_size = n2 * size_d; // 1 x 10
+	const size_t b0_size = n_1 * size_d; // 1 x 100
+	const size_t b1_size = n_2 * size_d; // 1 x 10
 	const size_t a1_size = n_images * n_1 * size_d; // 800 x 100
 	const size_t a2_size = n_images * n_2 * size_d; // 800 x 10
 	const size_t z1_size = n_images * n_1 * size_d; // 800 x 100
@@ -183,10 +200,6 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 	cudaMemcpy(d_W1, W1, W1_size, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_b0, b0, b0_size, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_b1, b1, b1_size, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_a1, a1, a1_size, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_a2, a2, a2_size, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_z1, z1, z1_size, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_z2, z2, z2_size, cudaMemcpyHostToDevice);	
 
 	// feedforward steps to calc a1, a2, z1, z2 all on device
 

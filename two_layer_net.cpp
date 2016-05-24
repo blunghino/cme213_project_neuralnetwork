@@ -306,15 +306,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   MPI_SAFE_CALL (MPI_Comm_size (MPI_COMM_WORLD, &num_procs));
   MPI_SAFE_CALL (MPI_Comm_rank (MPI_COMM_WORLD, &rank));
 
+  // TRANSPOSED
   arma::mat X_ = X.t();
   arma::mat y_ = y.t();
-
-  if (rank == 0) {
-    const int N = X.n_cols;
-  }
-  else {
-    const int N = 0;
-  }
+  int N = (rank == 0) ? X.n_cols : 0;
 
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
@@ -337,10 +332,9 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 
       // subset by row number
       int last_col = std::min((batch + 1)*batch_size-1, N-1);
-      arma::mat X_batch = X.cols (batch * batch_size, last_col);
-      arma::mat y_batch = y.cols (batch * batch_size, last_col);
+      arma::mat X_batch = X_.cols (batch * batch_size, last_col);
+      arma::mat y_batch = y_.cols (batch * batch_size, last_col);
 
-      // transpose?
       /*
        * Possible Implementation:
        * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
