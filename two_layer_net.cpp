@@ -309,7 +309,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   // TRANSPOSED
   arma::mat X_t = X.t();
   arma::mat y_t = y.t();
-  int N = (rank == 0) ? X.n_cols : 0;
+  int N = (rank == 0) ? X_t.n_cols : 0;
 
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
@@ -383,10 +383,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
         MPI_Comm communicator
       );
       */
-      
+
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
-                                  n_images, n_0, n_1, n_2);
+                                  n_images, n_0, n_1, n_2, reg);
 
       // MPI_Allreduce();
       // update.

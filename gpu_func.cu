@@ -90,7 +90,7 @@ void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
     }
 
 // FACTOR OF 1/M ???
-    a2[k] /= (M * denom);
+    a2[k] /= denom;
     if (y[k]) {
 		a2[k] -= 1;
 	}
@@ -106,6 +106,111 @@ int softmax_GPU(double* z2, double* a2, double* y, int M, int N) {
     check_launch("softmax_kernel");
 
     return 0;
+}
+
+// Kernel function called by my GEMM no overwrite - alpha * A * B = C
+template <int side>
+__global__
+void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* C,
+				                				  double alpha, int M, int N, int K) {
+	// side is BLOCK_SIZE
+	// M is C.stride
+	// K is B.stride
+	// K is A.stride
+	// A = K x M, B = K x N, C = M x N
+	const int block_row = blockIdx.y;
+	const int block_col = blockIdx.x;
+
+	const int row = threadIdx.y;
+	const int col = threadIdx.x;
+
+	double Cval = 0;
+	
+	const int C_idx = M * side * block_col + side * block_row;
+
+	const int Asub_idx = K * row + col;
+	const int Csub_idx = M * col + row;
+	const int Bsub_idx = K * col + row;
+
+    // get pointer into sub matrix for this kernel
+	double* Csub = &(C[C_idx]);
+
+	const int B_size = K * N;
+	const int A_size = M * K;
+
+	// loop over sub matrices (K is width of A)
+	// for (int k = 0; k < ((K + side - 1) / side); ++k) {
+
+	// 	//  to CHECK IN BOUNDS 
+	// 	int B_idx = K * side * block_col + side * k;
+	// 	int A_idx = K * side * block_row + side * k;
+
+	// 	// address to location of sub
+	// 	double* Asub = &(A[A_idx]);
+	// 	double* Bsub = &(B[B_idx]);
+
+	// 	// allocate shared memory
+	// 	__shared__ double Ashared[side][side];
+	// 	__shared__ double Bshared[side][side];
+
+	// 	// assign elements to shared memory
+	// 	if (A_idx + Asub_idx < A_size) {
+	// 		Ashared[row][col] = Asub[Asub_idx];
+	// 	}
+	// 	else {
+	// 		Ashared[row][col] = 0;
+	// 	}
+	// 	if (B_idx + Bsub_idx < B_size) {
+	// 		Bshared[row][col] = Bsub[Bsub_idx];
+	// 	}
+	// 	else {
+	// 		Bshared[row][col] = 0;
+	// 	}
+
+	// 	__syncthreads();
+		
+	// 	// do matrix multiply
+	// 	for (int idx = 0; idx < side; ++idx) {
+	// 		Cval += Ashared[row][idx] * Bshared[idx][col];
+	// 	}
+
+	// 	__syncthreads();
+
+	// }
+	
+	// check bounds
+	if (Csub_idx + C_idx < M * N) {
+		// set value
+		Csub[Csub_idx] = Cval;
+	}
+}
+
+
+// Routine to perform a GEMM operation without addition, transposing A
+//  not in place, i.e., D := alpha*A.T*B
+int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
+										  double alpha, int M, int N, int K){
+
+	// A, B are already memcopied to device ie we already have device pointers
+	// D is already malloced
+	const int side = 16;
+	//const int n_threads_per_block = 256;
+	int threads_x = side;
+	int threads_y = side;
+
+	int block_x = (N + threads_x - 1) / threads_x;
+	int block_y = (M + threads_y - 1) / threads_y;
+
+	dim3 threads_per_block(threads_x, threads_y);
+	dim3 blocks_per_grid(block_x, block_y);
+
+	// set up streams ??
+	myGEMM_no_overwrite_no_add_transposeA_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
+		(A, B, C, alpha, M, N, K);
+
+	check_launch("myGEMM_no_overwrite_no_add_transposeA");
+
+	return 0;
 }
 
 // Kernel function called by my GEMM no overwrite
@@ -190,12 +295,12 @@ void myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, doub
 // A = M x K, B = N x K, C = M x N, D = M x N
 // not in place, D := alpha * A * B.T + beta*C 
 int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D, 
-						double* alpha, double* beta, int M, int N, int K){
+						double alpha, double beta, int M, int N, int K){
 
 	// A, B, C are already memcopied to device ie we already have device pointers
 	// D is already malloced
 	const int side = 16;
-	const int n_threads_per_block = 256;
+	//const int n_threads_per_block = 256;
 	int threads_x = side;
 	int threads_y = side;
 
@@ -207,7 +312,7 @@ int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
 
 	// set up streams ??
 	myGEMM_no_overwrite_transposeB_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
-		(A, B, C, D, *alpha, *beta, M, N, K);
+		(A, B, C, D, alpha, beta, M, N, K);
 
 	check_launch("myGEMM_no_overwrite_transposeB_kernel");
 
@@ -292,12 +397,12 @@ void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 
 // Routine to perform a GEMM operation, not in place, i.e., D := alpha*A*B + beta*C 
 int myGEMM_no_overwrite(double* A, double* B, double* C, double* D, 
-						double* alpha, double* beta, int M, int N, int K){
+						double alpha, double beta, int M, int N, int K){
 
 	// A, B, C are already memcopied to device ie we already have device pointers
 	// D is already malloced
 	const int side = 16;
-	const int n_threads_per_block = 256;
+	//const int n_threads_per_block = 256;
 	int threads_x = side;
 	int threads_y = side;
 
@@ -309,9 +414,9 @@ int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
 
 	// set up streams ??
 	myGEMM_no_overwrite_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
-		(A, B, C, D, *alpha, *beta, M, N, K);
+		(A, B, C, D, alpha, beta, M, N, K);
 
-	check_launch("myGEMM_kernel_no_overwrite");
+	check_launch("myGEMM_no_overwrite_kernel");
 
 	return 0;
 }
@@ -413,7 +518,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	// A, B, C are already memcopied to device ie we already have device pointers
 	// first set up threads_per_block and blocks_per_grid
 	const int side = 16;
-	const int n_threads_per_block = 256;
+	//const int n_threads_per_block = 256;
 	int threads_x = side;
 	int threads_y = side;
 
@@ -434,7 +539,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 // X and y have been subdivided
 int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
-			  const int n_images, const int n_0, const int n_1, const int n_2) {
+			  const int n_images, const int n_0, const int n_1, const int n_2, double reg) {
 
 	// create pointers
 	double* d_X;
@@ -493,23 +598,38 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 	checkCudaErrors(cudaMemcpy(d_b0, b0, b0_size * sizeof(double), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpy(d_b1, b1, b1_size * sizeof(double), cudaMemcpyHostToDevice));
 
-	double alpha = 1, beta = 1;
 	// feedforward steps to calc a1, a2, z1, z2 all on device
 	// z1.T = W0 * X.T + b0.T
-	myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, &alpha, &beta, n_1, n_images, n_0);
+	myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, 1, 1, n_1, n_images, n_0);
 	// a1.T = sigmoid(z1.T)
 	sigmoid_GPU(d_z1, d_a1, n_1, n_images);
 	// z2.T = W1 * a1.T + b1.T
-	myGEMM_no_overwrite(d_W1, d_a1, d_b1, d_z2, &alpha, &beta, n_2, n_images, n_1);
+	myGEMM_no_overwrite(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
 	// a2.T = softmax(z2.T) - y
 	// a2.T now holds the CROSS ENTROPY
 	softmax_GPU(d_z2, d_a2, d_y, n_2, n_images);
 
-	// backprop steps to calc dW0/1 and db0/1 all on device
-	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, alpha, reg, n_2, n_1, n_i);
+	// backprop steps to calc dW0-1 and db0-1 all on device
+	// DW1 = CE * a1.T + reg * W1 where CE = 1/n_2 * a2.T
+	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, (double)(1/n_2), reg, n_2, n_1, n_images);
+	// Db1.T = a2.T ... do nothing
+	// Da1.T = W1 * a2.T 
+	myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a1, d_Da1, 1, n_1, n_images, n_2); 
+	// Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
+	Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images);
+	// DW0.T = Dz1.T * X.T + reg * W0
+	myGEMM_no_overwrite_transposeB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
+// CHECK! Db0.T = Dz1.T ... do nothing
 
-	// calls to myGEMM_kernel through myGEMM or directly?
-	// calls to other __global__ functions?
+	// gradient descent
+	// ie W0 = W0 - learning_rate * DW0
+	in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate);
+
+	// memcpy
+	checkCudaErrors(cudaMemcpy(W0, d_W0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(W1, d_W1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(b0, d_b0, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(b1, d_b1, b1_size * sizeof(double), cudaMemcpyDeviceToHost));
 
 	// free!
 	cudaFree(d_X);
