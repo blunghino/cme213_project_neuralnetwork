@@ -197,6 +197,8 @@ void TestGEMM(int M, int N, int K) {
        std::cerr << "CUBLAS gemm error at " << __FILE__ << ":" << __LINE__ << std::endl;
     }
 
+    cudaMemcpy(C2, dC2, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+
     /* We are calling your GEMM function here */
     int err;
     double mystart = MPI_Wtime();
@@ -205,12 +207,16 @@ void TestGEMM(int M, int N, int K) {
     }
     double myend = MPI_Wtime();
 
+    /* This is to check for cuda error status */
+    check_launch("myGEMM");
+
+    /* This error code is for your own debugging, it does not catch
+       illegal memory accesses or bad kernel launches */
     if(err!=0) {
         std::cout << "Error in my GEMM. Error code: " << err << std::endl;
     }
 
     cudaMemcpy(C1, dC1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
-    cudaMemcpy(C2, dC2, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
 
     int fail = compareGEMMResults(C1, C2, M, N);
     if (fail == 0) {       
@@ -245,6 +251,7 @@ void BenchmarkGEMM() {
 
     /* Secong GEMM Problem Size */
     M = 800*SCALE, N = 10*SCALE, K = 1000*SCALE;
+    // M = 1024, N = 1024, K = 1024;
     std::cout << std::endl << "Starting GEMM 2: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
