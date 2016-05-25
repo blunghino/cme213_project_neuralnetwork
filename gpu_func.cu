@@ -539,7 +539,8 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 // X and y have been subdivided
 int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
-			  const int n_images, const int n_0, const int n_1, const int n_2, double reg) {
+			  const int n_images, const int n_0, const int n_1, const int n_2, 
+			  double reg, double learning_rate) {
 
 	// create pointers
 	double* d_X;
@@ -642,6 +643,12 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 	cudaFree(d_a2);
 	cudaFree(d_z1);
 	cudaFree(d_z2);
+	cudaFree(d_DW0);
+	cudaFree(d_DW1);
+	cudaFree(d_Db0);
+	cudaFree(d_Db1);
+	cudaFree(d_Da1);
+	cudaFree(d_Dz1);
 
-	return 1;
+	return 0;
 }

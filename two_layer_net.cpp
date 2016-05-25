@@ -386,7 +386,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
-                                  n_images, n_0, n_1, n_2, reg);
+                                  n_images, n_0, n_1, n_2, reg, learning_rate);
 
       // MPI_Allreduce();
       // update.

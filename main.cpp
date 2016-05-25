@@ -196,7 +196,7 @@ int main(int argc, char* argv[]) {
         int dev_size = (int)(0.1 * NUM_TRAIN);
         x_train = x.rows(0, NUM_TRAIN-dev_size-1);
         y_train = y.rows(0, NUM_TRAIN-dev_size-1);
-        label_train = label.rows(0, NUM_TRAIN-dev_size)-1;
+        label_train = label.rows(0, NUM_TRAIN-dev_size-1);
 
         x_dev = x.rows(NUM_TRAIN-dev_size, NUM_TRAIN - 1);
         y_dev = y.rows(NUM_TRAIN-dev_size, NUM_TRAIN - 1);
