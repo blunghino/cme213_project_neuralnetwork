@@ -307,8 +307,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   MPI_SAFE_CALL (MPI_Comm_rank (MPI_COMM_WORLD, &rank));
 
   // TRANSPOSED
-  arma::mat X_ = X.t();
-  arma::mat y_ = y.t();
+  arma::mat X_t = X.t();
+  arma::mat y_t = y.t();
   int N = (rank == 0) ? X.n_cols : 0;
 
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
@@ -332,8 +332,17 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 
       // subset by row number
       int last_col = std::min((batch + 1)*batch_size-1, N-1);
-      arma::mat X_batch = X_.cols (batch * batch_size, last_col);
-      arma::mat y_batch = y_.cols (batch * batch_size, last_col);
+      arma::mat X_batch = X_t.cols (batch * batch_size, last_col);
+      arma::mat y_batch = y_t.cols (batch * batch_size, last_col);
+
+      // dimensions
+      int n_images = batch_size / num_procs;
+      int n_0 = nn.H[0];
+      int n_1 = nn.H[1];
+      int n_2 = nn.H[2];
+
+      arma::mat b0_t = arma::repmat(nn.b[0].t(), 1, n_images);
+      arma::mat b1_t = arma::repmat(nn.b[1].t(), 1, n_images);
 
       /*
        * Possible Implementation:
@@ -359,8 +368,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       double* y_batch_mem = y_batch.memptr();
       double* W0_mem = nn.W[0].memptr();
       double* W1_mem = nn.W[1].memptr();
-      double* b0_mem = nn.b[0].memptr();
-      double* b1_mem = nn.b[1].memptr();
+      double* b0_mem = b0_t.memptr();
+      double* b1_mem = b1_t.memptr();
 
       /* this will be called multiple times for W0, b0, W1, b1, X, y
       MPI_Scatter(
@@ -375,11 +384,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       );
       */
       
-      // dimensions
-      int n_images = batch_size / num_procs;
-      int n_0 = nn.H[0];
-      int n_1 = nn.H[1];
-      int n_2 = nn.H[2];
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
                                   n_images, n_0, n_1, n_2);
