@@ -376,10 +376,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       */
       
       // dimensions
-      int n_images = (batch_size + num_procs - 1) / num_procs;
-      int n_0 = X.n_rows;
-      int n_1 = nn.W[0].n_rows;
-      int n_2 = y.n_rows;
+      int n_images = batch_size / num_procs;
+      int n_0 = nn.H[0];
+      int n_1 = nn.H[1];
+      int n_2 = nn.H[2];
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
                                   n_images, n_0, n_1, n_2);
