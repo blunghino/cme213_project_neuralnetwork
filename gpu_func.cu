@@ -53,11 +53,11 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	double Cval = 0;
 	
 	const int C_idx = M * side * block_col + side * block_row;
-	// (probably don't need)
-	if (C_idx >= M * N) {
-		printf("uh oh");
-		return;
-	}
+	// // (probably don't need)
+	// if (C_idx >= M * N) {
+	// 	printf("uh oh");
+	// 	return;
+	// }
 
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
@@ -67,13 +67,18 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	const int Asub_idx = M * col + row;
 	const int Bsub_idx = K * col + row;
 
+	// check bounds
+	if (Asub_idx + C_idx >= M * N) {
+		return;
+	}
+
 	// printf("\n\n block_row: %d \n block_col: %d \n row: %d \n col: %d \n Asub_idx: %d \n Bsub_idx %d \n",
 	//        block_row, block_col, row, col, Asub_idx, Bsub_idx);
 
 	// check in bounds
-	if (Asub_idx >= A_size || Bsub_idx >= B_size) {
-		return;	
-	}
+	// if (Asub_idx >= A_size || Bsub_idx >= B_size) {
+	// 	return;	
+	// }
 
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
@@ -81,10 +86,10 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		//  CHECK IN BOUNDS (probably don't need)
 		int B_idx = K * side * block_col + side * k;
 		int A_idx = M * side * k + side * block_row;
-		if (B_idx >= B_size || A_idx >= A_size) {
-			printf("uh oh 2");
-			return;
-		}
+		// if (B_idx + >= B_size || A_idx >= A_size) {
+		// 	printf("uh oh 2");
+		// 	return;
+		// }
 
 		// address to location of sub
 		double* Asub = &(A[A_idx]);
@@ -95,8 +100,18 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		Ashared[row][col] = Asub[Asub_idx];
-		Bshared[row][col] = Bsub[Bsub_idx];
+		if (A_idx + Asub_idx < A_size) {
+			Ashared[row][col] = Asub[Asub_idx];
+		}
+		else {
+			Ashared[row][col] = 0;
+		}
+		if (B_idx + Bsub_idx < B_size) {
+			Bshared[row][col] = Bsub[Bsub_idx];
+		}
+		else {
+			Bshared[row][col] = 0;
+		}
 
 		__syncthreads();
 		
@@ -104,10 +119,11 @@ void myGEMM_kernel(double* A, double* B, double* C,
 
 		// do matrix multiply
 		for (int idx = 0; idx < side; ++idx) {
-			// bounds check
+			// bounds check (do you still need this?)
 			if (idx + idx_check < K) {
 				Cval += Ashared[row][idx] * Bshared[idx][col];
 			}
+			// Cval += Ashared[row][idx] * Bshared[idx][col];
 		}
 
 		__syncthreads();
