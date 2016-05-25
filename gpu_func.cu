@@ -53,43 +53,22 @@ void myGEMM_kernel(double* A, double* B, double* C,
 	double Cval = 0;
 	
 	const int C_idx = M * side * block_col + side * block_row;
-	// // (probably don't need)
-	// if (C_idx >= M * N) {
-	// 	printf("uh oh");
-	// 	return;
-	// }
+
+	const int Asub_idx = M * col + row;
+	const int Bsub_idx = K * col + row;
 
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
 
 	const int B_size = K * N;
 	const int A_size = M * K;
-	const int Asub_idx = M * col + row;
-	const int Bsub_idx = K * col + row;
-
-	// check bounds
-	if (Asub_idx + C_idx >= M * N) {
-		return;
-	}
-
-	// printf("\n\n block_row: %d \n block_col: %d \n row: %d \n col: %d \n Asub_idx: %d \n Bsub_idx %d \n",
-	//        block_row, block_col, row, col, Asub_idx, Bsub_idx);
-
-	// check in bounds
-	// if (Asub_idx >= A_size || Bsub_idx >= B_size) {
-	// 	return;	
-	// }
 
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
 
-		//  CHECK IN BOUNDS (probably don't need)
+		//  to CHECK IN BOUNDS 
 		int B_idx = K * side * block_col + side * k;
 		int A_idx = M * side * k + side * block_row;
-		// if (B_idx + >= B_size || A_idx >= A_size) {
-		// 	printf("uh oh 2");
-		// 	return;
-		// }
 
 		// address to location of sub
 		double* Asub = &(A[A_idx]);
@@ -115,15 +94,15 @@ void myGEMM_kernel(double* A, double* B, double* C,
 
 		__syncthreads();
 		
-		const int idx_check = side * k;
+		// const int idx_check = side * k;
 
 		// do matrix multiply
 		for (int idx = 0; idx < side; ++idx) {
 			// bounds check (do you still need this?)
-			if (idx + idx_check < K) {
-				Cval += Ashared[row][idx] * Bshared[idx][col];
-			}
-			// Cval += Ashared[row][idx] * Bshared[idx][col];
+			// if (idx + idx_check < K) {
+			// 	Cval += Ashared[row][idx] * Bshared[idx][col];
+			// }
+			Cval += Ashared[row][idx] * Bshared[idx][col];
 		}
 
 		__syncthreads();
@@ -132,10 +111,14 @@ void myGEMM_kernel(double* A, double* B, double* C,
 		// printf("\n\n loop \n block_row: %d \n block_col: %d \n row: %d \n col: %d \n A_idx: %d \n B_idx: %d \n k%d \n idx_check: %d \n",
 	 //           block_row, block_col, row, col, A_idx, B_idx, k, idx_check);
 	}
-	// evaluate the rest of the GEMM equation
-	Cval = alpha * Cval + beta * Csub[Asub_idx];
-	// set value
-	Csub[Asub_idx] = Cval;
+	
+	// check bounds
+	if (Asub_idx + C_idx < M * N) {
+		// evaluate the rest of the GEMM equation
+		Cval = alpha * Cval + beta * Csub[Asub_idx];
+		// set value
+		Csub[Asub_idx] = Cval;
+	}
 }
 
 /* 

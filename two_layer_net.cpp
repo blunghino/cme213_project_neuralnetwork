@@ -371,8 +371,9 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
         int recv_count,
         MPI_Datatype recv_datatype,
         int root,
-        MPI_Comm communicator)
-        */
+        MPI_Comm communicator
+      );
+      */
       
       // dimensions
       int n_images = (batch_size + num_procs - 1) / num_procs;
