@@ -34,6 +34,75 @@ int useless_gpu_add_one (int t)
 	return result;
 }
 
+// Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
+__global__
+void Dz1_schur_kernel(double* Da1, double* a1, double* Dz1, int M, int N) {
+
+    int col = threadIdx.x + blockDim.x * blockIdx.x;
+    int row = threadIdx.y + blockDim.y * blockIdx.y;
+    int k = col * M + row;
+
+    if (k < M * N) {
+    	double a1_k = a1[k];
+    	Dz1[k] = Da1[k] * a1_k * (1 - a1_k);
+    }
+}
+
+// Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
+int Dz1_schur_GPU(double* Da1, double* a1, double* Dz1, int M, int N) {
+
+    int threads_per_block = 256;
+    int threads_x = 32;
+    int threads_y = threads_per_block / threads_x;
+
+    int blocks_x = (N + threads_x - 1) / threads_x;
+    int blocks_y = (M + threads_y - 1) / threads_y;
+
+    dim3 threads(threads_x, threads_y);
+    dim3 blocks(blocks_x, blocks_y);
+
+	Dz1_schur_kernel<<<blocks, threads>>> (Da1, a1, Dz1, M, N);
+
+	check_launch("Dz1_schur_kernel");
+
+	return 0;
+}
+
+// W0 = W0 + learning_rate * DW0 
+__global__
+void in_place_linear_combination_kernel(double* W0, double* DW0, 
+										double learning_rate, int M, int N) {
+
+    int col = threadIdx.x + blockDim.x * blockIdx.x;
+    int row = threadIdx.y + blockDim.y * blockIdx.y;
+    int k = col * M + row;
+
+    if (k < M * N) {
+    	W0[k] += learning_rate * DW0[k];
+    }
+}
+
+// W0 = W0 + learning_rate * DW0 
+int in_place_linear_combination_GPU(double* W0, double* DW0, 
+									double learning_rate, int M, int N) {
+
+    int threads_per_block = 256;
+    int threads_x = 32;
+    int threads_y = threads_per_block / threads_x;
+
+    int blocks_x = (N + threads_x - 1) / threads_x;
+    int blocks_y = (M + threads_y - 1) / threads_y;
+
+    dim3 threads(threads_x, threads_y);
+    dim3 blocks(blocks_x, blocks_y);
+
+	in_place_linear_combination_kernel<<<blocks, threads>>> (W0, DW0, learning_rate, M, N);
+
+	check_launch("in_place_linear_combination_kernel");
+
+	return 0;
+}
+
 __global__
 void sigmoid_kernel(double* z1, double* a1, int M, int N) {
 
