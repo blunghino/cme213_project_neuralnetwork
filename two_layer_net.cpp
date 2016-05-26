@@ -371,25 +371,32 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       double* b0_mem = b0_t.memptr();
       double* b1_mem = b1_t.memptr();
 
-      /* this will be called multiple times for W0, b0, W1, b1, X, y
-      MPI_Scatter(
-        void* send_data,
-        int send_count,
-        MPI_Datatype send_datatype,
-        void* recv_data,
-        int recv_count,
-        MPI_Datatype recv_datatype,
-        int root,
-        MPI_Comm communicator
-      );
-      */
+      // mallocs
+      int X_size = n_images * n_0;
+      int y_size = n_images * n_2;
+      double* X_batch_buffer = malloc(sizeof(double) * X_size);
+      double* y_batch_buffer = malloc(sizeof(double) * y_size);
+
+      MPI_Scatter(X_batch_mem, X_size, MPI_DOUBLE, X_batch_buffer, 
+                  X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+      MPI_Scatter(y_batch_mem, y_size, MPI_DOUBLE, y_batch_buffer, 
+                  y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
+      // it also applies the gradient descent 
       int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
                                   n_images, n_0, n_1, n_2, reg, learning_rate);
 
       // MPI_Allreduce();
-      // update.
+
+      // freeze
+      free(X_batch_buffer);
+      free(y_batch_buffer);
+
+      // W0 and W1 should already be updated.
+      // b0 and b1 are updated but need to be compressed back to a single vector
+      nn.b[0] = arma::sum(b0_t, 1).t() * (1.0/(double)n_images);
+      nn.b[1] = arma::sum(b1_t, 1).t() * (1.0/(double)n_images); 
 
       if(print_every <= 0)
         print_flag = batch == 0;

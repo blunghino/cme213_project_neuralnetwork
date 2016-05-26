@@ -208,50 +208,51 @@ void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* 
 	const int A_size = M * K;
 
 	// loop over sub matrices (K is width of A)
-	// for (int k = 0; k < ((K + side - 1) / side); ++k) {
+	for (int k = 0; k < ((K + side - 1) / side); ++k) {
 
-	// 	//  to CHECK IN BOUNDS 
-	// 	int B_idx = K * side * block_col + side * k;
-	// 	int A_idx = K * side * block_row + side * k;
+		//  to CHECK IN BOUNDS 
+		int B_idx = K * side * block_col + side * k;
+		int A_idx = K * side * block_row + side * k;
 
-	// 	// address to location of sub
-	// 	double* Asub = &(A[A_idx]);
-	// 	double* Bsub = &(B[B_idx]);
+		// address to location of sub
+		double* Asub = &(A[A_idx]);
+		double* Bsub = &(B[B_idx]);
 
-	// 	// allocate shared memory
-	// 	__shared__ double Ashared[side][side];
-	// 	__shared__ double Bshared[side][side];
+		// allocate shared memory
+		__shared__ double Ashared[side][side];
+		__shared__ double Bshared[side][side];
 
-	// 	// assign elements to shared memory
-	// 	if (A_idx + Asub_idx < A_size) {
-	// 		Ashared[row][col] = Asub[Asub_idx];
-	// 	}
-	// 	else {
-	// 		Ashared[row][col] = 0;
-	// 	}
-	// 	if (B_idx + Bsub_idx < B_size) {
-	// 		Bshared[row][col] = Bsub[Bsub_idx];
-	// 	}
-	// 	else {
-	// 		Bshared[row][col] = 0;
-	// 	}
+		// assign elements to shared memory
+		if (A_idx + Asub_idx < A_size) {
+			Ashared[row][col] = Asub[Asub_idx];
+		}
+		else {
+			Ashared[row][col] = 0;
+		}
+		if (B_idx + Bsub_idx < B_size) {
+			Bshared[row][col] = Bsub[Bsub_idx];
+		}
+		else {
+			Bshared[row][col] = 0;
+		}
 
-	// 	__syncthreads();
+		__syncthreads();
 		
-	// 	// do matrix multiply
-	// 	for (int idx = 0; idx < side; ++idx) {
-	// 		Cval += Ashared[row][idx] * Bshared[idx][col];
-	// 	}
+		// do matrix multiply
+		for (int idx = 0; idx < side; ++idx) {
+			Cval += Ashared[row][idx] * Bshared[idx][col];
+		}
 
-	// 	__syncthreads();
+		__syncthreads();
 
-	// }
+	}
 	
 	// check bounds
 	if (Csub_idx + C_idx < M * N) {
 		// set value
 		Csub[Csub_idx] = Cval;
 	}
+
 }
 
 
@@ -681,7 +682,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
 	// backprop steps to calc dW0-1 and db0-1 all on device
 	// DW1 = CE * a1.T + reg * W1 where CE = 1/n_2 * a2.T
-	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, (double)(1/n_2), reg, n_2, n_1, n_images);
+	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, (1.0/(double)n_2), reg, n_2, n_1, n_images);
 	// Db1.T = a2.T ... do nothing
 	// Da1.T = W1 * a2.T 
 	myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a1, d_Da1, 1, n_1, n_images, n_2); 
@@ -693,7 +694,10 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
 	// gradient descent
 	// ie W0 = W0 - learning_rate * DW0
-	in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate);
+	in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate, n_1, n_0);
+	in_place_linear_combination_GPU(d_W1, d_DW1, -learning_rate, n_2, n_1);
+	in_place_linear_combination_GPU(d_b0, d_Db0, -learning_rate, n_1, n_images);
+	in_place_linear_combination_GPU(d_b1, d_Db1, -learning_rate, n_2, n_images);
 
 	// memcpy
 	checkCudaErrors(cudaMemcpy(W0, d_W0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
