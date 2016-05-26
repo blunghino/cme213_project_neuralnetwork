@@ -311,6 +311,12 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   arma::mat y_t = y.t();
   int N = (rank == 0) ? X_t.n_cols : 0;
 
+  // new matrices to use
+  arma::mat DW0(nn.W[0]);
+  arma::mat DW1(nn.W[1]);
+  arma::mat Db0(nn.b[0]);
+  arma::mat Db1(nn.b[1]);
+
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
   std::ofstream error_file;
@@ -335,48 +341,52 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       arma::mat X_batch = X_t.cols (batch * batch_size, last_col);
       arma::mat y_batch = y_t.cols (batch * batch_size, last_col);
 
+      /*
+       * Possible Implementation:
+       * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
+       * 2. compute each sub-batch of images' contribution to network coefficient updates
+       * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
+       * 4. update local network coefficient at each node
+       */
+
       // dimensions
       int n_images = batch_size / num_procs;
       int n_0 = nn.H[0];
       int n_1 = nn.H[1];
       int n_2 = nn.H[2];
-
+      // new matrices 
       arma::mat b0_t = arma::repmat(nn.b[0].t(), 1, n_images);
       arma::mat b1_t = arma::repmat(nn.b[1].t(), 1, n_images);
-
-      /*
-       * Possible Implementation:
-       * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
-        from each MPI node do cuda memcpy to each GPU with function written in gpu_func.cu
-        NOW data is on GPU and we do as much with it as possible before cudamemcpy back
-       * 2. compute each sub-batch of images' contribution to network coefficient updates
-        2 happens on GPU as much as possible. 
-        we are now working in a subroutine in gpu_func.cu
-        rewrite feedforward etc as __device__ or __global__ kernels
-        before 3 cudamemcpy back to cpu nodes
-       * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
-       * 4. update local network coefficient at each node
-       */
-
-       // optimizing data transfers is the tricky part. generally want to do as few as possible
-       // when does data get put on the GPU (before the beginning of this for loop?)
-       // when does data come back off the GPU (at least once before the end of this for loop to update)
-
-       // subdivide neural network into n_procs here
-       // to do this we have to get pointers to raw data for arma::mat for W and b 
+      arma::mat Db0_t(n_1, n_images);
+      arma::mat Db1_t(n_2, n_images);
+// COULD A LOT OF THIS BE DONE OUTSIDE FOR LOOP???
+      // sizes
+      int X_size = n_images * n_0;
+      int y_size = n_images * n_2;
+      int W0_size = n_1 * n_0;
+      int W1_size = n_2 * n_1;
+      int b0_size = n_1 * n_images;
+      int b1_size = n_2 * n_images;
+      // mallocs
+      double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
+      double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
+      double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
+      double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
+      double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
+      double* Db1_t_local = (double*) malloc(sizeof(double) * b1_size);
+      // arma pointers
       double* X_batch_mem = X_batch.memptr();
       double* y_batch_mem = y_batch.memptr();
       double* W0_mem = nn.W[0].memptr();
       double* W1_mem = nn.W[1].memptr();
       double* b0_mem = b0_t.memptr();
       double* b1_mem = b1_t.memptr();
+      double* DW0_mem = DW0.memptr();
+      double* DW1_mem = DW1.memptr();
+      double* Db0_t_mem = Db0_t.memptr();
+      double* Db1_t_mem = Db1_t.memptr();
 
-      // mallocs
-      int X_size = n_images * n_0;
-      int y_size = n_images * n_2;
-      double* X_batch_buffer = malloc(sizeof(double) * X_size);
-      double* y_batch_buffer = malloc(sizeof(double) * y_size);
-
+      // scatter to all GPUS
       MPI_Scatter(X_batch_mem, X_size, MPI_DOUBLE, X_batch_buffer, 
                   X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
       MPI_Scatter(y_batch_mem, y_size, MPI_DOUBLE, y_batch_buffer, 
@@ -385,18 +395,24 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       // it also applies the gradient descent 
       int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
+                                  DW0_local, DW1_local, Db0_t_local, Db1_t_local,
                                   n_images, n_0, n_1, n_2, reg, learning_rate);
 
-      // MPI_Allreduce();
+      // MPI_Allreduce() on DW0, DW1, Db0_t, Db1_t
+      MPI_Allreduce(DW0_local, DW0_mem, W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(DW1_local, DW1_mem, W1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(Db0_t_local, Db0_t_mem, b0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(Db1_t_local, Db1_t_mem, b1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-      // freeze
-      free(X_batch_buffer);
-      free(y_batch_buffer);
+      // b0 and b1 need to be compressed back to a single vector
+      Db0 = arma::sum(Db0_t, 1).t() * (1.0/(double)n_images);
+      Db1 = arma::sum(Db1_t, 1).t() * (1.0/(double)n_images);
 
-      // W0 and W1 should already be updated.
-      // b0 and b1 are updated but need to be compressed back to a single vector
-      nn.b[0] = arma::sum(b0_t, 1).t() * (1.0/(double)n_images);
-      nn.b[1] = arma::sum(b1_t, 1).t() * (1.0/(double)n_images); 
+      // UPDATES
+      nn.W[0] -= learning_rate * DW0;
+      nn.W[1] -= learning_rate * DW1; 
+      nn.b[0] -= learning_rate * Db0;
+      nn.b[1] -= learning_rate * Db1;
 
       if(print_every <= 0)
         print_flag = batch == 0;
@@ -407,6 +423,14 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
          matrices in the TwoLayerNet nn.  */
       if(debug && rank == 0 && print_flag)
         write_diff_gpu_cpu(nn, iter, error_file);
+
+      // freeze
+      free(X_batch_buffer);
+      free(y_batch_buffer);
+      free(DW0_local);
+      free(DW1_local);
+      free(Db0_t_local);
+      free(Db1_t_local);
 
       iter++;
     }

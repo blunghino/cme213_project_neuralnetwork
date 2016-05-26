@@ -609,6 +609,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 // X and y have been subdivided
 int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
+	          double* DW0, double* DW1, double* Db0, double* Db1,
 			  const int n_images, const int n_0, const int n_1, const int n_2, 
 			  double reg, double learning_rate) {
 
@@ -682,7 +683,8 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
 	// backprop steps to calc dW0-1 and db0-1 all on device
 	// DW1 = CE * a1.T + reg * W1 where CE = 1/n_2 * a2.T
-	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, (1.0/(double)n_2), reg, n_2, n_1, n_images);
+// myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, (1.0/(double)n_2), reg, n_2, n_1, n_images);
+	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
 	// Db1.T = a2.T ... do nothing
 	// Da1.T = W1 * a2.T 
 	myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a1, d_Da1, 1, n_1, n_images, n_2); 
@@ -694,16 +696,16 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
 	// gradient descent
 	// ie W0 = W0 - learning_rate * DW0
-	in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate, n_1, n_0);
-	in_place_linear_combination_GPU(d_W1, d_DW1, -learning_rate, n_2, n_1);
-	in_place_linear_combination_GPU(d_b0, d_Db0, -learning_rate, n_1, n_images);
-	in_place_linear_combination_GPU(d_b1, d_Db1, -learning_rate, n_2, n_images);
+	// in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate, n_1, n_0);
+	// in_place_linear_combination_GPU(d_W1, d_DW1, -learning_rate, n_2, n_1);
+	// in_place_linear_combination_GPU(d_b0, d_Db0, -learning_rate, n_1, n_images);
+	// in_place_linear_combination_GPU(d_b1, d_Db1, -learning_rate, n_2, n_images);
 
 	// memcpy
-	checkCudaErrors(cudaMemcpy(W0, d_W0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(W1, d_W1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(b0, d_b0, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(b1, d_b1, b1_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(DW0, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(DW1, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(Db0, d_Db0, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(Db1, d_Db1, b1_size * sizeof(double), cudaMemcpyDeviceToHost));
 
 	// free!
 	cudaFree(d_X);
