@@ -49,6 +49,10 @@ __global__
 void myGEMM_kernel_no_overwrite(double* A, double* B, double* C, double* D,
            double alpha, double beta, int M, int N, int K);
 
+int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
+            double alpha, double beta, int M, int N, int K);
+
+
 __global__
 void myGEMM_kernel(double* A, double* B, double* C, 
            double alpha, double beta, int M, int N, int K);

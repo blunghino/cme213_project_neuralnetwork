@@ -258,3 +258,141 @@ void BenchmarkGEMM() {
     TestGEMM(M, N, K);
     std::cout << "Completed GEMM 2" << std::endl;
 }
+
+
+void TestGEMM_no_overwrite(int M, int N, int K) {
+    
+    int num_iters = 1;
+
+    double *A;
+    double *B;
+    double *C1;
+    double *C2;
+    double *D1;
+
+    double *dA;
+    double *dB;
+    double *dC1;
+    double *dC2;
+    double *dD1;
+    double *dummy;
+
+    double alpha = 2.0;
+    double beta = 5.0;
+
+    A = (double *)malloc(M*K*sizeof(double)); 
+    B = (double *)malloc(K*N*sizeof(double));   
+    C1 = (double *)malloc(M*N*sizeof(double)); 
+    C2 = (double *)malloc(M*N*sizeof(double));
+    D1 = (double *)malloc(M*N*sizeof(double));
+
+    cudaMalloc((void **)&dA, sizeof(double) * M * K);
+    cudaMalloc((void **)&dB, sizeof(double) * K * N);
+    cudaMalloc((void **)&dC1, sizeof(double) * M * N);
+    cudaMalloc((void **)&dC2, sizeof(double) * M * N);
+    cudaMalloc((void **)&dD1, sizeof(double) * M * N);
+    cudaMalloc((void **)&dummy, sizeof(double) * M * N);
+
+
+    // C1 and C2 are same. We just have two copies to compare results
+    createMATS(A, B, C1, C2, M, N, K);
+
+    cudaMemcpy(dA, A, sizeof(double) * M * K, cudaMemcpyHostToDevice);
+    cudaMemcpy(dB, B, sizeof(double) * K * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dC1, C1, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dC2, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dummy, C1, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+
+
+    /* Warm up GPU before we run. We run one extra CuBlas */
+    cudaError_t cudaStat;
+    cublasStatus_t stat;
+    cublasHandle_t handle;
+    stat = cublasCreate(&handle);
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+        std::cerr << "CUBLAS initialization failed!" << std::endl;
+        return;
+    }
+
+    stat = cublasDgemm (handle,
+                          CUBLAS_OP_N, CUBLAS_OP_N,
+                          M, N, K,
+                          &alpha,
+                          dA, M,
+                          dB, K,
+                          &beta,
+                          dummy, M);
+
+    /* Compute reference solution and time the CuBlas */
+    double refstart = MPI_Wtime();
+    for(int i = 0; i < NUM_ITERS; i++) {
+        stat = cublasDgemm (handle,
+                          CUBLAS_OP_N, CUBLAS_OP_N,
+                          M, N, K,
+                          &alpha,
+                          dA, M,
+                          dB, K,
+                          &beta,
+                          dC2, M);
+    }
+    double refend = MPI_Wtime();
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+       std::cerr << "CUBLAS gemm error at " << __FILE__ << ":" << __LINE__ << std::endl;
+    }
+
+    cudaMemcpy(C2, dC2, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+
+    /* We are calling your GEMM function here */
+    int err;
+    double mystart = MPI_Wtime();
+    for(int i = 0; i < NUM_ITERS; i++) {
+        err = myGEMM_no_overwrite(dA, dB, dC1, dD1, alpha, beta, M, N, K);
+        // err = myGEMM(dA, dB, dC1, &alpha, &beta, M, N, K);
+    }
+    double myend = MPI_Wtime();
+
+    /* This is to check for cuda error status */
+    check_launch("myGEMM_no_overwrite");
+
+    /* This error code is for your own debugging, it does not catch
+       illegal memory accesses or bad kernel launches */
+    if(err!=0) {
+        std::cout << "Error in my GEMM. Error code: " << err << std::endl;
+    }
+
+    cudaMemcpy(D1, dD1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(D1, dC1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+
+    int fail = compareGEMMResults(D1, C2, M, N);
+    if (fail == 0) {       
+        std::cout << "Time for reference GEMM implementation: " 
+            << refend - refstart << std::endl;
+        std::cout << "Time for my GEMM implementation: " 
+            << myend - mystart << std::endl;        
+    }
+
+    free(A); 
+    free(B); 
+    free(C1); 
+    free(C2);
+    free(D1);
+    cudaFree(dA); 
+    cudaFree(dB); 
+    cudaFree(dC1); 
+    cudaFree(dC2); 
+    cudaFree(dD1);
+}
+
+void BenchmarkGEMM_no_overwrite() {
+
+    std::cout << std::endl << "BenchmarkGEMM_no_overwrite" 
+        << std::endl;
+
+    /* First GEMM Problem Size */
+    int M = 800*SCALE, N = 1000*SCALE, K = 784*SCALE;
+
+    std::cout << std::endl << "Starting GEMM: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    TestGEMM_no_overwrite(M, N, K);
+    std::cout << "Completed GEMM 1" << std::endl;
+}

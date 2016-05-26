@@ -12,4 +12,6 @@ int checkNNErrors(TwoLayerNet& seq_nn, TwoLayerNet& par_nn,
 
 void BenchmarkGEMM();
 
+void BenchmarkGEMM_no_overwrite();
+
 #endif

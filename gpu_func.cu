@@ -160,7 +160,7 @@ void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
 
 // FACTOR OF 1/M ??? (NO.)
     a2[k] /= denom;
-    
+
     if (y[k]) {
 		a2[k] -= 1;
 	}
@@ -461,8 +461,9 @@ void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 	
 	// check bounds
 	if (Asub_idx + C_idx < M * N) {
-		Dsub[Asub_idx] = alpha * Cval + beta * Csub[Asub_idx];
-	}
+		Cval = alpha * Cval + beta * Csub[Asub_idx];
+		// set value
+		Dsub[Asub_idx] = Cval;	}
 }
 
 

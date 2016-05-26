@@ -159,6 +159,15 @@ int main(int argc, char* argv[]) {
             debug = 1;
             print_every = 1;
             break;
+
+        case 6:  // test sigmoid_GPU in isolation
+            break;
+
+        case 7:  // test myGEMM_no_overwrite in isolation
+            break;
+
+        case 8: // test myGEMM_no_overwrite_transposeB in isolation
+            break;
     }
 
     if(grade == 4) {
@@ -169,6 +178,33 @@ int main(int argc, char* argv[]) {
         MPI_Finalize();
         return 0;
     }
+
+    // if (grade == 6) {
+    //     if(rank == 0) {
+    //         test_sigmoid_GPU();
+    //     }
+
+    //     MPI_Finalize();
+    //     return 0;        
+    // }
+
+    if (grade == 7) {
+        if(rank == 0) {
+            BenchmarkGEMM_no_overwrite();
+        }
+
+        MPI_Finalize();
+        return 0;        
+    }
+
+    // if (grade == 8) {
+    //     if(rank == 0) {
+    //         BenchmarkGEMM_no_overwrite_transposeB();
+    //     }
+
+    //     MPI_Finalize();
+    //     return 0;        
+    // }
 
     H[0] = IMAGE_SIZE;
     H[1] = num_neuron;
