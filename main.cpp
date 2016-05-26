@@ -148,6 +148,17 @@ int main(int argc, char* argv[]) {
 
         case 4:
             break;
+
+        case 5: // DEBUG
+            reg = 1e-4;
+            learning_rate = .01;
+            num_epochs = 1;
+            batch_size = 800;
+            num_neuron = 100;
+            run_seq = 1;
+            debug = 1;
+            print_every = 1;
+            break;
     }
 
     if(grade == 4) {
@@ -206,6 +217,13 @@ int main(int argc, char* argv[]) {
            network with test data label to evaluate its precision */
         x_test = arma::zeros(NUM_TEST, IMAGE_SIZE);
         read_mnist(FILE_TEST_IMAGES, x_test);
+
+        if (grade == 5) {
+            // x_train = arma::repmat(x_train.row(0), 0, batch_size);
+            x_train = x_train.rows(0, batch_size-1);
+            y_train = y_train.rows(0,batch_size-1);
+            label_train = label_train.rows(0,batch_size-1);
+        }
     }
 
     /* Run the sequential code if the serial flag is set */

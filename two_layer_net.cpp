@@ -311,13 +311,49 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   arma::mat y_t = y.t();
   int N = (rank == 0) ? X_t.n_cols : 0;
 
+
+  // dimensions
+  int n_images = batch_size / num_procs;
+  int n_0 = nn.H[0];
+  int n_1 = nn.H[1];
+  int n_2 = nn.H[2];
+  // new matrices 
+  arma::mat Db0_t(n_1, n_images);
+  arma::mat Db1_t(n_2, n_images);
   // new matrices to use
-  arma::mat DW0(nn.W[0]);
-  arma::mat DW1(nn.W[1]);
+  arma::mat DW0(n_1, n_0);
+  arma::mat DW1(n_2, n_1);
   arma::mat Db0(nn.b[0]);
   arma::mat Db1(nn.b[1]);
-
+  // sizes
+  int X_size = n_images * n_0;
+  int y_size = n_images * n_2;
+  int W0_size = n_1 * n_0;
+  int W1_size = n_2 * n_1;
+  int b0_size = n_1 * n_images;
+  int b1_size = n_2 * n_images;
+  // mallocs
+  double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
+  double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
+  double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
+  double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
+  double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
+  double* Db1_t_local = (double*) malloc(sizeof(double) * b1_size);
+  // arma pointers
+  double* W0_mem = nn.W[0].memptr();
+  double* W1_mem = nn.W[1].memptr();
+  double* DW0_mem = DW0.memptr();
+  double* DW1_mem = DW1.memptr();
+  double* Db0_t_mem = Db0_t.memptr();
+  double* Db1_t_mem = Db1_t.memptr();
+  // broad cast
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
+// MPI_Bcast(
+//     void* data,
+//     int count,
+//     MPI_Datatype datatype,
+//     int root,
+//     MPI_Comm communicator);
 
   std::ofstream error_file;
   error_file.open("Outputs/CpuGpuDiff.txt");
@@ -349,42 +385,13 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
        * 4. update local network coefficient at each node
        */
 
-      // dimensions
-      int n_images = batch_size / num_procs;
-      int n_0 = nn.H[0];
-      int n_1 = nn.H[1];
-      int n_2 = nn.H[2];
-      // new matrices 
+      // update every loop
       arma::mat b0_t = arma::repmat(nn.b[0].t(), 1, n_images);
       arma::mat b1_t = arma::repmat(nn.b[1].t(), 1, n_images);
-      arma::mat Db0_t(n_1, n_images);
-      arma::mat Db1_t(n_2, n_images);
-// COULD A LOT OF THIS BE DONE OUTSIDE FOR LOOP???
-      // sizes
-      int X_size = n_images * n_0;
-      int y_size = n_images * n_2;
-      int W0_size = n_1 * n_0;
-      int W1_size = n_2 * n_1;
-      int b0_size = n_1 * n_images;
-      int b1_size = n_2 * n_images;
-      // mallocs
-      double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
-      double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
-      double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
-      double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
-      double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
-      double* Db1_t_local = (double*) malloc(sizeof(double) * b1_size);
-      // arma pointers
+      double* b0_t_mem = b0_t.memptr();
+      double* b1_t_mem = b1_t.memptr();
       double* X_batch_mem = X_batch.memptr();
       double* y_batch_mem = y_batch.memptr();
-      double* W0_mem = nn.W[0].memptr();
-      double* W1_mem = nn.W[1].memptr();
-      double* b0_mem = b0_t.memptr();
-      double* b1_mem = b1_t.memptr();
-      double* DW0_mem = DW0.memptr();
-      double* DW1_mem = DW1.memptr();
-      double* Db0_t_mem = Db0_t.memptr();
-      double* Db1_t_mem = Db1_t.memptr();
 
       // scatter to all GPUS
       MPI_Scatter(X_batch_mem, X_size, MPI_DOUBLE, X_batch_buffer, 
@@ -394,7 +401,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       // it also applies the gradient descent 
-      int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_mem, b1_mem, 
+      int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
                                   DW0_local, DW1_local, Db0_t_local, Db1_t_local,
                                   n_images, n_0, n_1, n_2, reg, learning_rate);
 
@@ -424,17 +431,17 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       if(debug && rank == 0 && print_flag)
         write_diff_gpu_cpu(nn, iter, error_file);
 
-      // freeze
-      free(X_batch_buffer);
-      free(y_batch_buffer);
-      free(DW0_local);
-      free(DW1_local);
-      free(Db0_t_local);
-      free(Db1_t_local);
-
       iter++;
     }
   }
+  
+  // freeze
+  free(X_batch_buffer);
+  free(y_batch_buffer);
+  free(DW0_local);
+  free(DW1_local);
+  free(Db0_t_local);
+  free(Db1_t_local);
 
   error_file.close();
 }

@@ -158,8 +158,9 @@ void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
     	denom += a2[idx];
     }
 
-// FACTOR OF 1/M ???
+// FACTOR OF 1/M ??? (NO.)
     a2[k] /= denom;
+    
     if (y[k]) {
 		a2[k] -= 1;
 	}
