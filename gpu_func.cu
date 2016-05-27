@@ -675,6 +675,11 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 	// feedforward steps to calc a1, a2, z1, z2 all on device
 	// z1.T = W0 * X.T + b0.T
 	myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, 1, 1, n_1, n_images, n_0);
+
+	arma::mat z1_t = arma::mat(z1, n_1, n_images, false);
+	std::cout << z1_t.col(0) << std::endl;
+	std::cout << arma::size(z1_t);
+	
 	// a1.T = sigmoid(z1.T)
 	sigmoid_GPU(d_z1, d_a1, n_1, n_images);
 	// z2.T = W1 * a1.T + b1.T

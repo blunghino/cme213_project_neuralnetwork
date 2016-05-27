@@ -113,7 +113,7 @@ void createMATS_transposeB(double *A, double *B, double *C1, double *C2, double*
         for (i = 0; i < NK; i++)
         {
             B[i + j*NK] = ((double) i*j + 1) / NJ;
-            B_t[i + j*NJ] = ((double) i*j + 1) / NJ;
+            B_t[j + i*NJ] = ((double) i*j + 1) / NJ;
         }
     }
 
