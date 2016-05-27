@@ -90,7 +90,7 @@ void createMATS(double *A, double *B, double *C1, double *C2, int NI, int NJ, in
     {
         for (i = 0; i < NI; i++)
         {
-            C1[i + j*NI] = ((double) i*j + 2) / NJ;
+            C1[i + j*NI] = 0;
             C2[i + j*NI] = ((double) i*j + 2) / NJ;
         }
     }
@@ -150,15 +150,14 @@ void TestGEMM(int M, int N, int K) {
     cudaMalloc((void **)&dC2, sizeof(double) * M * N);
     cudaMalloc((void **)&dummy, sizeof(double) * M * N);
 
-
     // C1 and C2 are same. We just have two copies to compare results
     createMATS(A, B, C1, C2, M, N, K);
 
     cudaMemcpy(dA, A, sizeof(double) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(dB, B, sizeof(double) * K * N, cudaMemcpyHostToDevice);
-    cudaMemcpy(dC1, C1, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dC1, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
     cudaMemcpy(dC2, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
-    cudaMemcpy(dummy, C1, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dummy, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
 
 
     /* Warm up GPU before we run. We run one extra CuBlas */
@@ -198,16 +197,20 @@ void TestGEMM(int M, int N, int K) {
     }
 
     cudaMemcpy(C2, dC2, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+    check_launch("Reference GEMM");
 
     /* We are calling your GEMM function here */
+    /* We will make one dummy call and check_launch here */
     int err;
+    err = myGEMM(dA, dB, dummy, &alpha, &beta, M, N, K);
+    check_launch("myGEMM dummy");
+
     double mystart = MPI_Wtime();
     for(int i = 0; i < NUM_ITERS; i++) {
         err = myGEMM(dA, dB, dC1, &alpha, &beta, M, N, K);
     }
     double myend = MPI_Wtime();
 
-    /* This is to check for cuda error status */
     check_launch("myGEMM");
 
     /* This error code is for your own debugging, it does not catch
@@ -251,14 +254,11 @@ void BenchmarkGEMM() {
 
     /* Secong GEMM Problem Size */
     M = 800*SCALE, N = 10*SCALE, K = 1000*SCALE;
-    // M = 1024, N = 1024, K = 1024;
-    // M = 16, N = 16, K = 16;
     std::cout << std::endl << "Starting GEMM 2: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
     std::cout << "Completed GEMM 2" << std::endl;
 }
-
 
 void TestGEMM_no_overwrite(int M, int N, int K) {
     
