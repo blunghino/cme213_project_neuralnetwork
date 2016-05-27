@@ -14,4 +14,6 @@ void BenchmarkGEMM();
 
 void BenchmarkGEMM_no_overwrite();
 
+void BenchmarkGEMM_no_overwrite_transposeB();
+
 #endif

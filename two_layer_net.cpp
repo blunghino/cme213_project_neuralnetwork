@@ -311,7 +311,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   arma::mat y_t = y.t();
   int N = (rank == 0) ? X_t.n_cols : 0;
 
-
   // dimensions
   int n_images = batch_size / num_procs;
   int n_0 = nn.H[0];
@@ -335,6 +334,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   // mallocs
   double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
   double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
+  double* X_batch_mem;// = (double*) malloc(sizeof(double) * X_size);
+  double* y_batch_mem;// = (double*) malloc(sizeof(double) * y_size);
   double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
   double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
   double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
@@ -372,10 +373,14 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
     int num_batches = (N + batch_size - 1) / batch_size;
     for (int batch = 0; batch < num_batches; ++batch) {
 
-      // subset by row number
-      int last_col = std::min((batch + 1)*batch_size-1, N-1);
-      arma::mat X_batch = X_t.cols (batch * batch_size, last_col);
-      arma::mat y_batch = y_t.cols (batch * batch_size, last_col);
+      // if (rank == 0) {
+        // subset by row number
+        int last_col = std::min((batch + 1)*batch_size-1, N-1);
+        arma::mat X_batch = X_t.cols (batch * batch_size, last_col);
+        arma::mat y_batch = y_t.cols (batch * batch_size, last_col);
+        X_batch_mem = X_batch.memptr();
+        y_batch_mem = y_batch.memptr();
+      // }
 
       /*
        * Possible Implementation:
@@ -390,26 +395,24 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       arma::mat b1_t = arma::repmat(nn.b[1].t(), 1, n_images);
       double* b0_t_mem = b0_t.memptr();
       double* b1_t_mem = b1_t.memptr();
-      double* X_batch_mem = X_batch.memptr();
-      double* y_batch_mem = y_batch.memptr();
 
       // scatter to all GPUS
-      MPI_Scatter(X_batch_mem, X_size, MPI_DOUBLE, X_batch_buffer, 
-                  X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-      MPI_Scatter(y_batch_mem, y_size, MPI_DOUBLE, y_batch_buffer, 
-                  y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+      MPI_SAFE_CALL(MPI_Scatter(X_batch_mem, X_size, MPI_DOUBLE, X_batch_buffer, 
+                  X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
+      MPI_SAFE_CALL(MPI_Scatter(y_batch_mem, y_size, MPI_DOUBLE, y_batch_buffer, 
+                  y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
 
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       // it also applies the gradient descent 
-      int gpu_success = gpu_train(X_batch_mem, y_batch_mem, W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
+      int gpu_success = gpu_train(X_batch_buffer, y_batch_buffer, W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
                                   DW0_local, DW1_local, Db0_t_local, Db1_t_local,
                                   n_images, n_0, n_1, n_2, reg, learning_rate);
 
       // MPI_Allreduce() on DW0, DW1, Db0_t, Db1_t
-      MPI_Allreduce(DW0_local, DW0_mem, W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-      MPI_Allreduce(DW1_local, DW1_mem, W1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-      MPI_Allreduce(Db0_t_local, Db0_t_mem, b0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-      MPI_Allreduce(Db1_t_local, Db1_t_mem, b1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_SAFE_CALL(MPI_Allreduce(DW0_local, DW0_mem, W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+      MPI_SAFE_CALL(MPI_Allreduce(DW1_local, DW1_mem, W1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+      MPI_SAFE_CALL(MPI_Allreduce(Db0_t_local, Db0_t_mem, b0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+      MPI_SAFE_CALL(MPI_Allreduce(Db1_t_local, Db1_t_mem, b1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
 
       // b0 and b1 need to be compressed back to a single vector
       Db0 = arma::sum(Db0_t, 1).t() * (1.0/(double)n_images);
@@ -434,10 +437,12 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       iter++;
     }
   }
-  
+
   // freeze
   free(X_batch_buffer);
   free(y_batch_buffer);
+  // free(X_batch_mem);
+  // free(y_batch_mem);
   free(DW0_local);
   free(DW1_local);
   free(Db0_t_local);

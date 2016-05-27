@@ -45,13 +45,11 @@ inline double stop_timer(event_pair * p)
 
 int useless_gpu_add_one (int t);
 
-__global__
-void myGEMM_kernel_no_overwrite(double* A, double* B, double* C, double* D,
-           double alpha, double beta, int M, int N, int K);
+int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D, 
+            double alpha, double beta, int M, int N, int K);
 
 int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
             double alpha, double beta, int M, int N, int K);
-
 
 __global__
 void myGEMM_kernel(double* A, double* B, double* C, 

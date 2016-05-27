@@ -197,14 +197,14 @@ int main(int argc, char* argv[]) {
         return 0;        
     }
 
-    // if (grade == 8) {
-    //     if(rank == 0) {
-    //         BenchmarkGEMM_no_overwrite_transposeB();
-    //     }
+    if (grade == 8) {
+        if(rank == 0) {
+            BenchmarkGEMM_no_overwrite_transposeB();
+        }
 
-    //     MPI_Finalize();
-    //     return 0;        
-    // }
+        MPI_Finalize();
+        return 0;        
+    }
 
     H[0] = IMAGE_SIZE;
     H[1] = num_neuron;
