@@ -135,16 +135,13 @@ int sigmoid_GPU(double* z1, double* a1, int M, int N) {
 	return 0;
 }
 
+// this kernel does soft max and subtracts y AND scales by 1/N
 __global__
 void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
 
 	int col = threadIdx.x;
     int row = blockIdx.x;
     int k = col * M + row;
-
-    // if (k >= M * N) {
-    // 	return;
-    // }
 
     a2[k] = exp(z2[k]);
 
@@ -158,12 +155,13 @@ void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
     	denom += a2[idx];
     }
 
-// FACTOR OF 1/M ??? (NO.)
     a2[k] /= denom;
 
-    if (y[k]) {
-		a2[k] -= 1;
-	}
+    // (y^ - y)
+    a2[k] -= y[k];
+    // factor of 1/N
+    a2[k] /= N;
+
 }
 
 int softmax_GPU(double* z2, double* a2, double* y, int M, int N) {
@@ -605,132 +603,6 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 		(A, B, C, *alpha, *beta, M, N, K);
 
 	check_launch("myGEMM_kernel");
-
-	return 0;
-}
-
-// X and y have been subdivided
-int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
-	          double* DW0, double* DW1, double* Db0, double* Db1,
-			  const int n_images, const int n_0, const int n_1, const int n_2, 
-			  double reg, double learning_rate) {
-
-	// create pointers
-	double* d_X;
-	double* d_y;
-	double* d_W0;
-	double* d_W1;
-	double* d_b0;
-	double* d_b1;
-	// data only on device
-	double* d_a1;
-	double* d_a2;
-	double* d_z1;
-	double* d_z2;
-	double* d_DW0;
-	double* d_DW1;
-	double* d_Db0;
-	double* d_Db1;
-	double* d_Da1;
-	double* d_Dz1;
-
-	// calc sizes
-	const unsigned int X_size = n_images * n_0; // 800 x 784
-	const unsigned int y_size = n_images * n_2; // 800 x 10
-	const unsigned int W0_size = n_1 * n_0; // 100 x 784
-	const unsigned int W1_size = n_2 * n_1; // 10 x 100
-	const unsigned int b0_size = n_images * n_1; // 800 x 100
-	const unsigned int b1_size = n_images * n_2; // 800 x 10
-	const unsigned int a1_size = n_images * n_1; // 800 x 100
-	const unsigned int a2_size = n_images * n_2; // 800 x 10
-	const unsigned int z1_size = n_images * n_1; // 800 x 100
-	const unsigned int z2_size = n_images * n_2; // 800 x 10
-
-	// malloc
-	checkCudaErrors(cudaMalloc(&d_X, X_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_y, y_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_W0, W0_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_W1, W1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_b0, b0_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_b1, b1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_a1, a1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_a2, a2_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_z1, z1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_z2, z2_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_DW0, W0_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_DW1, W1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_Db0, b0_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_Db1, b1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_Da1, a1_size * sizeof(double)));
-	checkCudaErrors(cudaMalloc(&d_Dz1, z1_size * sizeof(double)));
-
-	// memcpy
-	checkCudaErrors(cudaMemcpy(d_X, X, X_size * sizeof(double), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_y, y, y_size * sizeof(double), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_W0, W0, W0_size * sizeof(double), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_W1, W1, W1_size * sizeof(double), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_b0, b0, b0_size * sizeof(double), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_b1, b1, b1_size * sizeof(double), cudaMemcpyHostToDevice));
-
-	// feedforward steps to calc a1, a2, z1, z2 all on device
-	// z1.T = W0 * X.T + b0.T
-	myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, 1, 1, n_1, n_images, n_0);
-
-	arma::mat z1_t = arma::mat(z1, n_1, n_images, false);
-	std::cout << z1_t.col(0) << std::endl;
-	std::cout << arma::size(z1_t);
-	
-	// a1.T = sigmoid(z1.T)
-	sigmoid_GPU(d_z1, d_a1, n_1, n_images);
-	// z2.T = W1 * a1.T + b1.T
-	myGEMM_no_overwrite(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
-	// a2.T = softmax(z2.T) - y
-	// a2.T now holds the CROSS ENTROPY
-	softmax_GPU(d_z2, d_a2, d_y, n_2, n_images);
-
-	// backprop steps to calc dW0-1 and db0-1 all on device
-	// DW1 = CE * a1.T + reg * W1 where CE = 1/n_2 * a2.T
-// myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, (1.0/(double)n_2), reg, n_2, n_1, n_images);
-	myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
-	// Db1.T = a2.T ... do nothing
-	// Da1.T = W1 * a2.T 
-	myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a1, d_Da1, 1, n_1, n_images, n_2); 
-	// Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
-	Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images);
-	// DW0.T = Dz1.T * X.T + reg * W0
-	myGEMM_no_overwrite_transposeB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
-// CHECK! Db0.T = Dz1.T ... do nothing
-
-	// gradient descent
-	// ie W0 = W0 - learning_rate * DW0
-	// in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate, n_1, n_0);
-	// in_place_linear_combination_GPU(d_W1, d_DW1, -learning_rate, n_2, n_1);
-	// in_place_linear_combination_GPU(d_b0, d_Db0, -learning_rate, n_1, n_images);
-	// in_place_linear_combination_GPU(d_b1, d_Db1, -learning_rate, n_2, n_images);
-
-	// memcpy
-	checkCudaErrors(cudaMemcpy(DW0, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(DW1, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(Db0, d_Db0, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(Db1, d_Db1, b1_size * sizeof(double), cudaMemcpyDeviceToHost));
-
-	// free!
-	cudaFree(d_X);
-	cudaFree(d_y);
-	cudaFree(d_W0);
-	cudaFree(d_W1);
-	cudaFree(d_b0);
-	cudaFree(d_b1);
-	cudaFree(d_a1);
-	cudaFree(d_a2);
-	cudaFree(d_z1);
-	cudaFree(d_z2);
-	cudaFree(d_DW0);
-	cudaFree(d_DW1);
-	cudaFree(d_Db0);
-	cudaFree(d_Db1);
-	cudaFree(d_Da1);
-	cudaFree(d_Dz1);
 
 	return 0;
 }

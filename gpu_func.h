@@ -45,6 +45,18 @@ inline double stop_timer(event_pair * p)
 
 int useless_gpu_add_one (int t);
 
+int in_place_linear_combination_GPU(double* W0, double* DW0, 
+                  double learning_rate, int M, int N);
+
+int Dz1_schur_GPU(double* Da1, double* a1, double* Dz1, int M, int N);
+
+int sigmoid_GPU(double* z1, double* a1, int M, int N);
+
+int softmax_GPU(double* z2, double* a2, double* y, int M, int N);
+
+int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
+                      double alpha, int M, int N, int K);
+
 int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D, 
             double alpha, double beta, int M, int N, int K);
 
