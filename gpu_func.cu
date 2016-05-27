@@ -160,7 +160,7 @@ void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
     // (y^ - y)
     a2[k] -= y[k];
     // factor of 1/N
-    a2[k] /= N;
+    a2[k] /= (double)N;
 
 }
 

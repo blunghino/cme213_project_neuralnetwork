@@ -580,5 +580,63 @@ void BenchmarkGEMM_no_overwrite_transposeB() {
     std::cout << std::endl << "Starting GEMM: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM_no_overwrite_transposeB(M, N, K);
+
     std::cout << "Completed GEMM 1" << std::endl;
+}
+
+void test_sigmoid_GPU() {
+
+    int warmup =  useless_gpu_add_one (2);
+    check_launch("useless_gpu_add_one");
+
+    std::cout << std::endl << "test_sigmoid_GPU" 
+        << std::endl;
+
+    int M = 800*SCALE, N = 800*SCALE, K = 800*SCALE;
+
+    std::cout << std::endl << "Starting test_sigmoid_GPU: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    double *A;
+    double *B;
+    double *C1;
+    double *C2;
+    double *dummy;
+    double *dC1;
+    double *dA;
+
+    A = (double *)malloc(M*N*sizeof(double)); 
+    B = (double *)malloc(M*N*sizeof(double));
+    C1 = (double *)malloc(M*N*sizeof(double)); 
+    dummy = (double *)malloc(M*N*sizeof(double)); 
+
+    checkCudaErrors(cudaMalloc((void **)&dA, sizeof(double) * M * N));
+    checkCudaErrors(cudaMalloc((void **)&dC1, sizeof(double) * M * N));
+    // C1 and C2 are same. We just have two copies to compare results
+
+    createMATS(A, B, C1, dummy, M, N, K);
+
+    checkCudaErrors(cudaMemcpy(dA, A, sizeof(double) * M * N, cudaMemcpyHostToDevice));
+
+    arma::mat a_mat = arma::mat(A, M, N, false);
+    arma::mat c2_mat = 1.0 / (1.0 + arma::exp(-1.0 * a_mat));
+
+    C2 = c2_mat.memptr();
+
+    int err = sigmoid_GPU(dA, dC1, M, N);
+
+    checkCudaErrors(cudaMemcpy(C1, dC1, sizeof(double) * M * N, cudaMemcpyDeviceToHost));
+
+    int fail = compareGEMMResults(C1, C2, M, N);
+    if (fail == 0) {       
+        std::cout << "PASSED!" << std::endl;
+    }
+
+    free(A); 
+    free(B); 
+    free(C1); 
+    free(dummy);
+    cudaFree(dA);
+    cudaFree(dC1);
+
+    std::cout << "Completed test_sigmoid_GPU" << std::endl;
 }

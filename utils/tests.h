@@ -16,4 +16,6 @@ void BenchmarkGEMM_no_overwrite();
 
 void BenchmarkGEMM_no_overwrite_transposeB();
 
+void test_sigmoid_GPU();
+
 #endif

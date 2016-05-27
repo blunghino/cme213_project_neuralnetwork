@@ -6,6 +6,8 @@
 #include "mpi.h"
 #include "iomanip"
 
+#define BUGIDX 49
+
 #define MPI_SAFE_CALL( call ) do {                               \
     int err = call;                                              \
     if (err != MPI_SUCCESS) {                                    \
@@ -149,10 +151,10 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   bpgrads.dW[0] = dz1.t() * bpcache.X + reg * nn.W[0];
   bpgrads.db[0] = arma::sum(dz1, 0);
 
-      std::cout << "CPU a2 " << diff.row(0) << std::endl;
-      // std::cout << "CPU a1 " << bpcache.a[0].row(0) << std::endl;
-      // std::cout << "CPU W[1] " << nn.W[1].col(0) << std::endl;
-      // std::cout << "CPU dW[1] " << bpgrads.dW[1].col(0) << std::endl; 
+      std::cout << "CPU a2 " << diff.row(BUGIDX) << std::endl;
+      std::cout << "CPU a1 " << bpcache.a[0].row(BUGIDX) << std::endl;
+      // std::cout << "CPU W[1] " << nn.W[1].col(BUGIDX) << std::endl;
+      // std::cout << "CPU dW[1] " << bpgrads.dW[1].col(BUGIDX) << std::endl; 
 
 /*
   std::cout << "y " << arma::size(y) << std::endl;
@@ -266,8 +268,8 @@ void train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double lear
       backprop (nn, y_batch, reg, bpcache, bpgrads);
 
 
-      // std::cout << "CPU dW1 row  " << bpgrads.dW[1].row(0) << std::endl;
-      // std::cout << "CPU dW1 col  " << bpgrads.dW[1].col(0) << std::endl;
+      // std::cout << "CPU dW1 row  " << bpgrads.dW[1].row(BUGIDX) << std::endl;
+      // std::cout << "CPU dW1 col  " << bpgrads.dW[1].col(BUGIDX) << std::endl;
 
       if (print_every > 0 && iter % print_every == 0) {
        if (grad_check) {
@@ -375,7 +377,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // arma::mat z1_t = arma::mat(n_1, n_images);
   // cudaMemcpy(z1_t.memptr(), d_z1, sizeof(double)*z1_size, cudaMemcpyDeviceToHost);
-  // std::cout << z1_t.col(0) << std::endl;
+  // std::cout << z1_t.col(BUGIDX) << std::endl;
   // std::cout << arma::size(z1_t);
   
   // a1.T = sigmoid(z1.T)
@@ -383,7 +385,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   arma::mat a1_t = arma::mat(n_1, n_images);
   cudaMemcpy(a1_t.memptr(), d_a1, sizeof(double)*a1_size, cudaMemcpyDeviceToHost);
-  // std::cout << a1_t.col(0) << std::endl;
+  // std::cout << "GPU a1_t " << a1_t.col(BUGIDX) << std::endl;
   // std::cout << arma::size(a1_t);
 
   // z2.T = W1 * a1.T + b1.T
@@ -391,7 +393,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // arma::mat z2_t = arma::mat(n_2, n_images);
   // cudaMemcpy(z2_t.memptr(), d_z2, sizeof(double)*z2_size, cudaMemcpyDeviceToHost);
-  // std::cout << z2_t.col(0) << std::endl;
+  // std::cout << z2_t.col(BUGIDX) << std::endl;
   // std::cout << arma::size(z2_t);
 
   // a2.T = (softmax(z2.T) - y) / n_images
@@ -400,9 +402,9 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   arma::mat a2_t = arma::mat(n_2, n_images);
   cudaMemcpy(a2_t.memptr(), d_a2, sizeof(double)*a2_size, cudaMemcpyDeviceToHost);
-  std::cout << "GPU a2_t " << arma::size(a2_t) << std::endl;
-  std::cout << a2_t.col(6) << std::endl;
-  std::cout << a2_t.row(6) << std::endl;
+  // std::cout << "GPU a2_t " << arma::size(a2_t) << std::endl;
+  // std::cout << "GPU a2_t " << a2_t.col(BUGIDX) << std::endl;
+  // std::cout << a2_t.row(BUGIDX) << std::endl;
 
   // backprop steps to calc dW0-1 and db0-1 all on device
   // DW1 = CE * a1.T + reg * W1 where CE = "diff"
@@ -410,18 +412,18 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   arma::mat W1_mat(W1, n_2, n_1, false);
   arma::mat DW1_cpu = a2_t * a1_t.t() + reg * W1_mat;
-// std::cout << "GPU a2 " << a2_t.col(0) << std::endl;
-// std::cout << "GPU a1 " << a1_t.col(0) << std::endl;
-// std::cout << "GPU W[1] " << W1_mat.col(0) << std::endl;
-// std::cout << "ARMA DW[1] " << DW1_cpu.col(0) << std::endl;
+std::cout << "GPU a2 " << a2_t.col(BUGIDX) << std::endl;
+std::cout << "GPU a1 " << a1_t.col(BUGIDX) << std::endl;
+// std::cout << "GPU W[1] " << W1_mat.col(BUGIDX) << std::endl;
+// std::cout << "ARMA DW[1] " << DW1_cpu.col(BUGIDX) << std::endl;
 
   arma::mat DW1_mat = arma::mat(n_2, n_1);
   cudaMemcpy(DW1_mat.memptr(), d_DW1, sizeof(double)*W1_size, cudaMemcpyDeviceToHost);
   // std::cout << "DW1 " << arma::size(DW1_mat) << std::endl;
-  // std::cout << "DW1 row " << DW1_mat.row(0) << std::endl;
-  // std::cout << "DW1 col " << DW1_mat.col(0) << std::endl;
+  // std::cout << "DW1 row " << DW1_mat.row(BUGIDX) << std::endl;
+  // std::cout << "GPU DW1 " << DW1_mat.col(BUGIDX) << std::endl;
   // std::cout << "DW1 " << arma::size(DW1_cpu) << std::endl;
-  // std::cout << "DW1 row " << DW1_cpu.row(0) << std::endl;
+  // std::cout << "DW1 row " << DW1_cpu.row(BUGIDX) << std::endl;
 
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 
@@ -429,8 +431,8 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // arma::mat Da1_t_mat = arma::mat(n_1, n_images);
   // cudaMemcpy(Da1_t_mat.memptr(), d_Da1, sizeof(double)*a1_size, cudaMemcpyDeviceToHost);
-  // std::cout << Da1_t_mat.col(0) << std::endl;
   // std::cout << arma::size(Da1_t_mat);
+  // std::cout << Da1_t_mat.col(BUGIDX) << std::endl;
 
   // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
   Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images);
@@ -542,19 +544,19 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
      and therefore goes from 0 to epochs*num_batches */
   int iter = 0;
 
-  // for (int epoch = 0; epoch < epochs; ++epoch) {
+// for (int epoch = 0; epoch < epochs; ++epoch) {
   for (int epoch = 0; epoch < 1; ++epoch) {
     int num_batches = (N + batch_size - 1) / batch_size;
     for (int batch = 0; batch < num_batches; ++batch) {
 
-      // if (rank == 0) {
+      if (rank == 0) {
         // subset by row number
         int last_col = std::min((batch + 1)*batch_size-1, N-1);
-        arma::mat X_batch = X_t.cols (batch * batch_size, last_col);
-        arma::mat y_batch = y_t.cols (batch * batch_size, last_col);
+        X_batch = X_t.cols (batch * batch_size, last_col);
+        y_batch = y_t.cols (batch * batch_size, last_col);
         X_batch_mem = X_batch.memptr();
         y_batch_mem = y_batch.memptr();
-      // }
+      }
 
       /*
        * Possible Implementation:

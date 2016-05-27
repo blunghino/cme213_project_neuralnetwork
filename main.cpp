@@ -179,14 +179,14 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // if (grade == 6) {
-    //     if(rank == 0) {
-    //         test_sigmoid_GPU();
-    //     }
+    if (grade == 6) {
+        if(rank == 0) {
+            test_sigmoid_GPU();
+        }
 
-    //     MPI_Finalize();
-    //     return 0;        
-    // }
+        MPI_Finalize();
+        return 0;        
+    }
 
     if (grade == 7) {
         if(rank == 0) {
