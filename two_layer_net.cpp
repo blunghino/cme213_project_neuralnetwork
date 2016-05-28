@@ -12,10 +12,14 @@
 #define BUG_EPOCH 1
 #define BUG_BATCH 1
 
+// for debugging
 arma::mat g_DW1;
+arma::mat g_diff_t;
 arma::mat g_Da1_t;
 arma::mat g_Dz1_t;
 arma::mat g_DW0;
+arma::mat g_Db0;
+arma::mat g_Db1;
 
 #define MPI_SAFE_CALL( call ) do {                               \
     int err = call;                                              \
@@ -120,18 +124,6 @@ void feedforward (TwoLayerNet &nn, const arma::mat& X, struct cache& cache)
   softmax (z2, a2);
   cache.a[1] = cache.yc = a2;
 
-/*
-  std::cout << "X " << arma::size(X) << std::endl;
-  std::cout << "z1 " << arma::size(z1) << std::endl;
-  std::cout << "z2 " << arma::size(z2) << std::endl;
-  std::cout << "a1 " << arma::size(a1) << std::endl;
-  std::cout << "a2 " << arma::size(a2) << std::endl;
-  std::cout << "nn.W[0] " << arma::size(nn.W[0]) << std::endl;
-  std::cout << "nn.W[1] " << arma::size(nn.W[1]) << std::endl;
-  std::cout << "nn.b[0] " << arma::size(nn.b[0]) << std::endl;
-  std::cout << "nn.b[1] " << arma::size(nn.b[1]) << std::endl;
-*/
-
 }
 
 /*
@@ -160,6 +152,13 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   bpgrads.dW[0] = dz1.t() * bpcache.X + reg * nn.W[0];
   bpgrads.db[0] = arma::sum(dz1, 0);
 
+  g_diff_t = diff.t();
+  g_Db0 = bpgrads.db[0];
+  g_Db1 = bpgrads.db[1];
+  g_DW1 = bpgrads.dW[1];
+  g_Dz1_t = dz1.t();
+  g_DW0 = bpgrads.dW[0];
+
   // std::cout << "CPU z1_t" << std::endl;
   // arma::mat z1_t = bpcache.z[0].t();
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
@@ -183,7 +182,6 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   //   std::cout << i << ": " << nn.W[1].memptr()[i] << std::endl;
   // }
 
-  g_DW1 = bpgrads.dW[1];
   // std::cout << "\nCPU dW[1] " <<  std::endl; 
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
   //   std::cout << i << ": " << bpgrads.dW[1].memptr()[i] << std::endl;
@@ -196,13 +194,11 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   //   std::cout << i << ": " << da1_t.memptr()[i] << std::endl;
   // }
 
-  g_Dz1_t = dz1.t();
   // std::cout << "\nCPU Dz1_t " <<  std::endl; 
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
   //   std::cout << i << ": " << dz1_t.memptr()[i] << std::endl;
   // }
 
-  g_DW0 = bpgrads.dW[0];
   // std::cout << "\nCPU W0" << std::endl;
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
   //   std::cout << i << ": " << nn.W[0].memptr()[i] << std::endl;
@@ -294,12 +290,12 @@ void train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double lear
   int iter = 0;
   int print_flag = 0;
 
-  for (int epoch = 0 ; epoch < BUG_EPOCH; ++epoch) {
-  // for (int epoch = 0 ; epoch < epochs; ++epoch) {
+  // for (int epoch = 0 ; epoch < BUG_EPOCH; ++epoch) {
+  for (int epoch = 0 ; epoch < epochs; ++epoch) {
     int num_batches = (int) ceil ( N / (float) batch_size);    
 
-    for (int batch = 0; batch < BUG_BATCH; ++batch) {
-    // for (int batch = 0; batch < num_batches; ++batch) {
+    // for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    for (int batch = 0; batch < num_batches; ++batch) {
       int last_row = std::min((batch + 1)*batch_size-1, N-1);
       arma::mat X_batch = X.rows (batch * batch_size, last_row);
       arma::mat y_batch = y.rows (batch * batch_size, last_row);
@@ -419,23 +415,12 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   arma::mat z1_t = arma::mat(n_1, n_images);
   cudaMemcpy(z1_t.memptr(), d_z1, sizeof(double)*z1_size, cudaMemcpyDeviceToHost);
-
-  // std::cout << arma::size(z1_t);
-  // std::cout << "\nGPU z1_t" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << z1_t.memptr()[i] << std::endl;
-  // }
   
   // a1.T = sigmoid(z1.T)
   sigmoid_GPU(d_z1, d_a1, n_1, n_images);
 
   arma::mat a1_t = arma::mat(n_1, n_images);
   cudaMemcpy(a1_t.memptr(), d_a1, sizeof(double)*a1_size, cudaMemcpyDeviceToHost);
-  
-  // std::cout << "\nGPU a1_t" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << a1_t.memptr()[i] << std::endl;
-  // }
 
   // z2.T = W1 * a1.T + b1.T
   myGEMM_no(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
@@ -450,11 +435,6 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   arma::mat a2_t = arma::mat(n_2, n_images);
   cudaMemcpy(a2_t.memptr(), d_a2, sizeof(double)*a2_size, cudaMemcpyDeviceToHost);
 
-  // std::cout << "\nGPU a2_t" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << a2_t.memptr()[i] << std::endl;
-  // }
-
   // backprop steps to calc dW0-1 and db0-1 all on device
   // DW1 = CE * a1.T + reg * W1 where CE = "diff"
   myGEMM_no_tB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
@@ -464,26 +444,12 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   arma::mat W1_mat(W1, n_2, n_1, false);
 
-  // std::cout << "\nGPU W1" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << W1_mat.memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nGPU DW1" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << DW1_mat.memptr()[i] << std::endl;
-  // }
-
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 
   myGEMM_no_na_tA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
 
   // arma::mat Da1_t_mat = arma::mat(n_1, n_images);
   // cudaMemcpy(Da1_t_mat.memptr(), d_Da1, sizeof(double)*a1_size, cudaMemcpyDeviceToHost);
-  // std::cout << "\nGPU Da1_t " <<  std::endl; 
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << Da1_t_mat.memptr()[i] << std::endl;
-  // }
 
   // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
   Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images);
@@ -491,11 +457,11 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   arma::mat Dz1_t_mat = arma::mat(n_1, n_images);
   cudaMemcpy(Dz1_t_mat.memptr(), d_Dz1, sizeof(double)*z1_size, cudaMemcpyDeviceToHost);
 
-  arma::mat diff_Dz1_t = g_Dz1_t - Dz1_t_mat;
-  std::cout << "\ndiff Dz1_t " <<  std::endl; 
-  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-    std::cout << i << ": " << diff_Dz1_t.memptr()[i] << std::endl;
-  }  
+  // arma::mat diff_Dz1_t = g_Dz1_t - Dz1_t_mat;
+  // std::cout << "\ndiff Dz1_t " <<  std::endl; 
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << diff_Dz1_t.memptr()[i] << std::endl;
+  // }  
 
   // DW0.T = Dz1.T * X.T + reg * W0
   myGEMM_no_tB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
@@ -506,28 +472,29 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   // arma::mat W0_mat = arma::mat(n_1, n_0);
   // cudaMemcpy(W0_mat.memptr(), d_W0, sizeof(double)*W0_size, cudaMemcpyDeviceToHost);
 
-  // calc ARMA DW0
-  // arma::mat DW0_arma = Dz1_t_mat * X_t_mat.t() + reg * W0_mat;
-  // arma::mat diff_DW0_arma = g_DW0 - DW0_arma;
-  // std::cout << "\nARMA diff DW0" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << diff_DW0_arma.memptr()[i] << std::endl;
-  // }
-
   arma::mat DW0_mat = arma::mat(n_1, n_0);
   cudaMemcpy(DW0_mat.memptr(), d_DW0, sizeof(double)*W0_size, cudaMemcpyDeviceToHost);
 
-  arma::mat diff_DW0 = g_DW0 - DW0_mat;
-  std::cout << "\n GPU diff DW0" << std::endl;
-  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-    std::cout << i << ": " << diff_DW0.memptr()[i] << std::endl;
-  }
+  // arma::mat diff_DW0 = g_DW0 - DW0_mat;
+  // std::cout << "\n GPU diff DW0" << std::endl;
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << diff_DW0.memptr()[i] << std::endl;
+  // }
+
+
+  // arma::mat Db0_t_mat = arma::mat(n_1, n_images);
+  // cudaMemcpy(Db0_t_mat.memptr(), d_Dz1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
+  // arma::mat Db0_vec = arma::sum(Db0_t_mat, 1);
+  // arma::mat diff_Db0_vec = g_Db0 - Db0_vec.t();
+  // std::cout << "\n GPU diff Db0" << std::endl;
+  // std::cout << diff_Db0_vec << std::endl;
+
 
   // memcpy
   checkCudaErrors(cudaMemcpy(DW0, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
   checkCudaErrors(cudaMemcpy(DW1, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(Db0, d_Db0, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(Db1, d_Db1, b1_size * sizeof(double), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(Db0, d_Dz1, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
+  checkCudaErrors(cudaMemcpy(Db1, d_a2, b1_size * sizeof(double), cudaMemcpyDeviceToHost));
 
   // free!
   cudaFree(d_X);
@@ -565,6 +532,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   arma::mat X_t = X.t();
   arma::mat y_t = y.t();
   int N = (rank == 0) ? X.n_rows : 0;
+  // broad cast
+  MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
   // dimensions
   int n_images = batch_size / num_procs;
@@ -575,6 +544,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   // new matrices 
   arma::mat Db0_t(n_1, n_images);
   arma::mat Db1_t(n_2, n_images);
+// REDUNDANT?
   // new matrices to use
   arma::mat DW0(n_1, n_0);
   arma::mat DW1(n_2, n_1);
@@ -582,6 +552,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   arma::mat Db1(nn.b[1]);
   arma::mat X_batch;
   arma::mat y_batch;
+
   // sizes
   int X_size = n_images * n_0;
   int y_size = n_images * n_2;
@@ -605,8 +576,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   double* DW1_mem = DW1.memptr();
   double* Db0_t_mem = Db0_t.memptr();
   double* Db1_t_mem = Db1_t.memptr();
-  // broad cast
-  MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
   std::ofstream error_file;
   error_file.open("Outputs/CpuGpuDiff.txt");
@@ -621,12 +590,12 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
      and therefore goes from 0 to epochs*num_batches */
   int iter = 0;
 
-// for (int epoch = 0; epoch < epochs; ++epoch) {
-  for (int epoch = 0; epoch < BUG_EPOCH; ++epoch) {
+  for (int epoch = 0; epoch < epochs; ++epoch) {
+  // for (int epoch = 0; epoch < BUG_EPOCH; ++epoch) {
 
     int num_batches = (N + batch_size - 1) / batch_size;
-    for (int batch = 0; batch < BUG_BATCH; ++batch) {
-    // for (int batch = 0; batch < num_batches; ++batch) {
+    // for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    for (int batch = 0; batch < num_batches; ++batch) {
 
       if (rank == 0) {
         // subset by row number
@@ -658,7 +627,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
                   y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
 
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
-      // it also applies the gradient descent 
       int gpu_success = gpu_train(X_batch_buffer, y_batch_buffer, W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
                                   DW0_local, DW1_local, Db0_t_local, Db1_t_local,
                                   n_images, n_0, n_1, n_2, reg, learning_rate, batch_size);
@@ -673,11 +641,20 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       Db0 = arma::sum(Db0_t, 1).t();
       Db1 = arma::sum(Db1_t, 1).t();
 
+      // std::cout << "Db0 diff" << std::endl;
+      // std::cout << g_Db0 - Db0 << std::endl;
+
+      // std::cout << "Db1 diff" << std::endl;
+      // std::cout << g_Db1 - Db1 << std::endl;
+
       // UPDATES
       nn.W[0] -= learning_rate * DW0;
       nn.W[1] -= learning_rate * DW1; 
       nn.b[0] -= learning_rate * Db0;
       nn.b[1] -= learning_rate * Db1;
+
+      arma::inplace_trans(Db1_t);
+      std::cout << "Loss at iteration " << iter << " of epoch " << epoch << "/" << epochs << " = " << loss(nn, Db1_t, y_batch, reg) << "\n";
 
       if(print_every <= 0)
         print_flag = batch == 0;
