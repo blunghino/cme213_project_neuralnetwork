@@ -44,7 +44,7 @@ void Dz1_schur_kernel(double* Da1, double* a1, double* Dz1, int M, int N) {
 
     if (k < M * N) {
     	double a1_k = a1[k];
-    	Dz1[k] = Da1[k] * a1_k * (1 - a1_k);
+    	Dz1[k] = Da1[k] * a1_k * (1.0 - a1_k);
     }
 }
 

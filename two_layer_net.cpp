@@ -6,8 +6,16 @@
 #include "mpi.h"
 #include "iomanip"
 
-#define BUGIDX 290
+#define BUGIDX 775
 #define BUGINC 30
+
+#define BUG_EPOCH 1
+#define BUG_BATCH 1
+
+arma::mat g_DW1;
+arma::mat g_Da1_t;
+arma::mat g_Dz1_t;
+arma::mat g_DW0;
 
 #define MPI_SAFE_CALL( call ) do {                               \
     int err = call;                                              \
@@ -175,16 +183,30 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   //   std::cout << i << ": " << nn.W[1].memptr()[i] << std::endl;
   // }
 
+  g_DW1 = bpgrads.dW[1];
   // std::cout << "\nCPU dW[1] " <<  std::endl; 
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
   //   std::cout << i << ": " << bpgrads.dW[1].memptr()[i] << std::endl;
   // }
 
-  arma::mat da1_t = da1.t();
-  std::cout << "\nCPU Da1_t " <<  std::endl; 
-  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-    std::cout << i << ": " << da1_t.memptr()[i] << std::endl;
-  }
+  // g_Da1_t = da1.t();
+  // arma::mat da1_t = da1.t();
+  // std::cout << "\nCPU Da1_t " <<  std::endl; 
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << da1_t.memptr()[i] << std::endl;
+  // }
+
+  g_Dz1_t = dz1.t();
+  // std::cout << "\nCPU Dz1_t " <<  std::endl; 
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << dz1_t.memptr()[i] << std::endl;
+  // }
+
+  g_DW0 = bpgrads.dW[0];
+  // std::cout << "\nCPU W0" << std::endl;
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << nn.W[0].memptr()[i] << std::endl;
+  // }
 
 }
 
@@ -272,10 +294,12 @@ void train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double lear
   int iter = 0;
   int print_flag = 0;
 
-  for (int epoch = 0 ; epoch < epochs; ++epoch) {
+  for (int epoch = 0 ; epoch < BUG_EPOCH; ++epoch) {
+  // for (int epoch = 0 ; epoch < epochs; ++epoch) {
     int num_batches = (int) ceil ( N / (float) batch_size);    
 
-    for (int batch = 0; batch < num_batches; ++batch) {
+    for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    // for (int batch = 0; batch < num_batches; ++batch) {
       int last_row = std::min((batch + 1)*batch_size-1, N-1);
       arma::mat X_batch = X.rows (batch * batch_size, last_row);
       arma::mat y_batch = y.rows (batch * batch_size, last_row);
@@ -439,7 +463,6 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   cudaMemcpy(DW1_mat.memptr(), d_DW1, sizeof(double)*W1_size, cudaMemcpyDeviceToHost);
 
   arma::mat W1_mat(W1, n_2, n_1, false);
-// arma::mat DW1_cpu = a2_t * a1_t.t() + reg * W1_mat;
 
   // std::cout << "\nGPU W1" << std::endl;
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
@@ -451,35 +474,54 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   //   std::cout << i << ": " << DW1_mat.memptr()[i] << std::endl;
   // }
 
-  arma::mat Da1_t_ARMA = W1_mat.t() * a2_t;
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 
   myGEMM_no_na_tA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
 
-  arma::mat Da1_t_mat = arma::mat(n_1, n_images);
-  cudaMemcpy(Da1_t_mat.memptr(), d_Da1, sizeof(double)*a1_size, cudaMemcpyDeviceToHost);
-  std::cout << "\nGPU Da1_t " <<  std::endl; 
-  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-    std::cout << i << ": " << Da1_t_mat.memptr()[i] << std::endl;
-  }
-
-  std::cout << "\nARMA Da1_t " <<  std::endl; 
-  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-    std::cout << i << ": " << Da1_t_ARMA.memptr()[i] << std::endl;
-  }
+  // arma::mat Da1_t_mat = arma::mat(n_1, n_images);
+  // cudaMemcpy(Da1_t_mat.memptr(), d_Da1, sizeof(double)*a1_size, cudaMemcpyDeviceToHost);
+  // std::cout << "\nGPU Da1_t " <<  std::endl; 
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << Da1_t_mat.memptr()[i] << std::endl;
+  // }
 
   // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
   Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images);
+
+  arma::mat Dz1_t_mat = arma::mat(n_1, n_images);
+  cudaMemcpy(Dz1_t_mat.memptr(), d_Dz1, sizeof(double)*z1_size, cudaMemcpyDeviceToHost);
+
+  arma::mat diff_Dz1_t = g_Dz1_t - Dz1_t_mat;
+  std::cout << "\ndiff Dz1_t " <<  std::endl; 
+  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+    std::cout << i << ": " << diff_Dz1_t.memptr()[i] << std::endl;
+  }  
+
   // DW0.T = Dz1.T * X.T + reg * W0
   myGEMM_no_tB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
   // Db0.T = Dz1.T ... do nothing
 
-  // gradient descent
-  // ie W0 = W0 - learning_rate * DW0
-  // in_place_linear_combination_GPU(d_W0, d_DW0, -learning_rate, n_1, n_0);
-  // in_place_linear_combination_GPU(d_W1, d_DW1, -learning_rate, n_2, n_1);
-  // in_place_linear_combination_GPU(d_b0, d_Db0, -learning_rate, n_1, n_images);
-  // in_place_linear_combination_GPU(d_b1, d_Db1, -learning_rate, n_2, n_images);
+  // arma::mat X_t_mat = arma::mat(n_0, n_images);
+  // cudaMemcpy(X_t_mat.memptr(), d_X, sizeof(double)*X_size, cudaMemcpyDeviceToHost);
+  // arma::mat W0_mat = arma::mat(n_1, n_0);
+  // cudaMemcpy(W0_mat.memptr(), d_W0, sizeof(double)*W0_size, cudaMemcpyDeviceToHost);
+
+  // calc ARMA DW0
+  // arma::mat DW0_arma = Dz1_t_mat * X_t_mat.t() + reg * W0_mat;
+  // arma::mat diff_DW0_arma = g_DW0 - DW0_arma;
+  // std::cout << "\nARMA diff DW0" << std::endl;
+  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+  //   std::cout << i << ": " << diff_DW0_arma.memptr()[i] << std::endl;
+  // }
+
+  arma::mat DW0_mat = arma::mat(n_1, n_0);
+  cudaMemcpy(DW0_mat.memptr(), d_DW0, sizeof(double)*W0_size, cudaMemcpyDeviceToHost);
+
+  arma::mat diff_DW0 = g_DW0 - DW0_mat;
+  std::cout << "\n GPU diff DW0" << std::endl;
+  for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
+    std::cout << i << ": " << diff_DW0.memptr()[i] << std::endl;
+  }
 
   // memcpy
   checkCudaErrors(cudaMemcpy(DW0, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
@@ -580,9 +622,11 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   int iter = 0;
 
 // for (int epoch = 0; epoch < epochs; ++epoch) {
-  for (int epoch = 0; epoch < 1; ++epoch) {
+  for (int epoch = 0; epoch < BUG_EPOCH; ++epoch) {
+
     int num_batches = (N + batch_size - 1) / batch_size;
-    for (int batch = 0; batch < num_batches; ++batch) {
+    for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    // for (int batch = 0; batch < num_batches; ++batch) {
 
       if (rank == 0) {
         // subset by row number
