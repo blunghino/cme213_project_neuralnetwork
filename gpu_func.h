@@ -52,7 +52,7 @@ int Dz1_schur_GPU(double* Da1, double* a1, double* Dz1, int M, int N);
 
 int sigmoid_GPU(double* z1, double* a1, int M, int N);
 
-int softmax_GPU(double* z2, double* a2, double* y, int M, int N);
+int softmax_GPU(double* z2, double* a2, double* y, int M, int N, int scale);
 
 int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
                       double alpha, int M, int N, int K);

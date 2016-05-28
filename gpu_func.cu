@@ -111,7 +111,7 @@ void sigmoid_kernel(double* z1, double* a1, int M, int N) {
     int k = col * M + row;
 
     if (k < M * N) {
-    	a1[k] = 1 / (1 + exp(-z1[k]));
+    	a1[k] = 1.0 / (1.0 + exp(-z1[k]));
     }
 }
 
@@ -137,7 +137,7 @@ int sigmoid_GPU(double* z1, double* a1, int M, int N) {
 
 // this kernel does soft max and subtracts y AND scales by 1/N
 __global__
-void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
+void softmax_kernel(double* z2, double* a2, double* y, int M, int N, int scale) {
 
 	int col = threadIdx.x;
     int row = blockIdx.x;
@@ -155,21 +155,20 @@ void softmax_kernel(double* z2, double* a2, double* y, int M, int N) {
     	denom += a2[idx];
     }
 
+    __syncthreads();
+
     a2[k] /= denom;
 
     // (y^ - y)
     a2[k] -= y[k];
     // factor of 1/N
-    a2[k] /= (double)N;
+    a2[k] /= (double)scale;
 
 }
 
-int softmax_GPU(double* z2, double* a2, double* y, int M, int N) {
+int softmax_GPU(double* z2, double* a2, double* y, int M, int N, int scale) {
 
-    dim3 threads(N);
-    dim3 blocks(M);
-
-    softmax_kernel<<<blocks, threads>>> (z2, a2, y, M, N);
+    softmax_kernel<<<M, N>>> (z2, a2, y, M, N, scale);
 
     check_launch("softmax_kernel");
 

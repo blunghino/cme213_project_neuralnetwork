@@ -813,17 +813,17 @@ void BenchmarkGEMM_no_tB() {
 
     std::cout << std::endl << "Starting GEMM: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
-    TestGEMM_no_overwrite_transposeB(M, N, K);
+    TestGEMM_no_tB(M, N, K);
 
     std::cout << "Completed GEMM 1" << std::endl;
 
     M = 100, N = 800, K = 784;
     std::cout << std::endl << "Starting GEMM 3: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
-    TestGEMM_no_overwrite_transposeB(M, N, K);
+    TestGEMM_no_tB(M, N, K);
 
     M = 10, N = 800, K = 100;
     std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
-    TestGEMM_no_overwrite_transposeB(M, N, K);
+    TestGEMM_no_tB(M, N, K);
 }
