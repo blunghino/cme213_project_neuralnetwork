@@ -206,6 +206,15 @@ int main(int argc, char* argv[]) {
         return 0;        
     }
 
+    if (grade == 9) {
+        if(rank == 0) {
+            BenchmarkGEMM_no_tB();
+        }
+
+        MPI_Finalize();
+        return 0;        
+    }
+
     H[0] = IMAGE_SIZE;
     H[1] = num_neuron;
     H[2] = NUM_CLASSES;

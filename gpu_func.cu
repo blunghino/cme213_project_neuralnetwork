@@ -496,7 +496,7 @@ Kernel function called by my GEMM
 */
 template <int side>
 __global__
-void myGEMM_kernel(double* A, double* B, double* C, 
+void myGEMM_shared_kernel(double* A, double* B, double* C, 
 				   double alpha, double beta, int M, int N, int K) {
 	// side is BLOCK_SIZE
 	// M is C.stride
@@ -582,7 +582,7 @@ void myGEMM_kernel(double* A, double* B, double* C,
 /* 
 Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C 
 */
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
+int myGEMM_shared(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
 	/* TODO: Write an efficient GEMM implementation on GPU */
 
 	// A, B, C are already memcopied to device ie we already have device pointers
@@ -599,10 +599,112 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	dim3 blocks_per_grid(block_x, block_y);
 
 	// set up streams ??
-	myGEMM_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
+	myGEMM_shared_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
 		(A, B, C, *alpha, *beta, M, N, K);
 
-	check_launch("myGEMM_kernel");
+	check_launch("myGEMM_shared_kernel");
 
+	return 0;
+}
+
+__global__
+void myGEMM_no_na_tA_kernel(double* A, double* B, double* C, double alpha, int M, int N, int K) {
+
+	int row = blockIdx.x;
+	int col = threadIdx.x;
+	int idx = col * M + row;
+
+	double Cval = 0;
+
+	for (int k = 0; k < K; ++k) {
+		Cval += alpha * A[K * row + k] * B[K * col + k];
+	}
+
+	C[idx] = Cval;
+}
+
+int myGEMM_no_na_tA(double* A, double* B, double* C, 
+                      double alpha, int M, int N, int K) {
+
+	myGEMM_no_na_tA_kernel <<<M, N>>> (A, B, C, alpha, M, N, K);
+
+	check_launch("myGEMM_no_tb_kernel");
+	
+	return 0;	
+}
+
+__global__
+void myGEMM_no_tB_kernel(double* A, double* B, double* C, double* D,
+                         double alpha, double beta, int M, int N, int K) {
+
+	int row = blockIdx.x;
+	int col = threadIdx.x;
+	int idx = col * M + row;
+
+	double Cval = 0;
+
+	for (int k = 0; k < K; ++k) {
+		Cval += alpha * A[k * M + row] * B[N * k + col];
+	}
+
+	D[idx] = Cval + C[idx] * beta;
+}
+
+int myGEMM_no_tB(double* A, double* B, double* C, double* D, 
+            double alpha, double beta, int M, int N, int K) {
+
+	myGEMM_no_tB_kernel <<<M, N>>> (A, B, C, D, alpha, beta, M, N, K);
+
+	check_launch("myGEMM_no_tb_kernel");
+	
+	return 0;
+}
+
+__global__
+void myGEMM_no_kernel(double* A, double* B, double* C, double* D, 
+	                  double alpha, double beta, int M, int N, int K) {
+
+	int row = blockIdx.x;
+	int col = threadIdx.x;
+	int idx = col * M + row;
+
+	double Cval = 0;
+
+	for (int k = 0; k < K; ++k) {
+		Cval += alpha * A[k * M + row] * B[K * col + k];
+	}
+
+	D[idx] = Cval + C[idx] * beta;
+}
+
+int myGEMM_no(double* A, double* B, double* C, double* D,
+            double alpha, double beta, int M, int N, int K) {
+
+	myGEMM_no_kernel <<<M, N>>> (A, B, C, D, alpha, beta, M, N, K);
+
+	check_launch("myGEMM_no_kernel");
+
+	return 0;	
+}
+
+__global__
+void myGEMM_simple_kernel(double* A, double* B, double* C, double alpha, double beta, int M, int N, int K) {
+
+	int row = blockIdx.x;
+	int col = threadIdx.x;
+	int idx = col * M + row;
+
+	double Cval = 0;
+
+	for (int k = 0; k < K; ++k) {
+		Cval += alpha * A[k * M + row] * B[K * col + k];
+	}
+
+	C[idx] = Cval + C[idx] * beta;
+}
+
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
+	myGEMM_simple_kernel <<<M, N>>> (A, B, C, *alpha, *beta, M, N, K);
+	check_launch("myGEMM_simple_kernel");
 	return 0;
 }

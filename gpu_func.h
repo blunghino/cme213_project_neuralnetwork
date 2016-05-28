@@ -63,14 +63,15 @@ int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
 int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
             double alpha, double beta, int M, int N, int K);
 
-__global__
-void myGEMM_kernel(double* A, double* B, double* C, 
-           double alpha, double beta, int M, int N, int K);
+int myGEMM_no_na_tA(double* A, double* B, double* C, 
+                      double alpha, int M, int N, int K);
+
+int myGEMM_no_tB(double* A, double* B, double* C, double* D, 
+            double alpha, double beta, int M, int N, int K);
+
+int myGEMM_no(double* A, double* B, double* C, double* D,
+            double alpha, double beta, int M, int N, int K);
 
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K);
-
-int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* b1, 
-        double* DW0, double* DW1, double* Db0, double* Db1,
-        const int n_images, const int n_0, const int n_1, const int n_2, double reg, double learning_rate);
 
 #endif

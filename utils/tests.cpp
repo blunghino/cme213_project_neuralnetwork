@@ -667,3 +667,163 @@ void test_sigmoid_GPU() {
 
     std::cout << "Completed test_sigmoid_GPU" << std::endl;
 }
+
+void TestGEMM_no_tB(int M, int N, int K) {
+    
+    int num_itrs = 1;
+
+    double *A;
+    double *B;
+    double *B_t;
+    double *C1;
+    double *C2;
+    double *D1;
+
+    double *dA;
+    double *dB;
+    double* dB_t;
+    double *dC1;
+    double *dC2;
+    double *dD1;
+    double *dummy;
+    double *dummy2;
+
+    double alpha = 2.0;
+    double beta = 5.0;
+
+    A = (double *)malloc(M*K*sizeof(double)); 
+    B = (double *)malloc(K*N*sizeof(double));
+    B_t = (double*)malloc(N*K*sizeof(double));
+    C1 = (double *)malloc(M*N*sizeof(double)); 
+    C2 = (double *)malloc(M*N*sizeof(double));
+    D1 = (double *)malloc(M*N*sizeof(double));
+
+    cudaMalloc((void **)&dA, sizeof(double) * M * K);
+    cudaMalloc((void **)&dB, sizeof(double) * K * N);
+    cudaMalloc((void**)&dB_t, sizeof(double) * N * K);
+    cudaMalloc((void **)&dC1, sizeof(double) * M * N);
+    cudaMalloc((void **)&dC2, sizeof(double) * M * N);
+    cudaMalloc((void **)&dD1, sizeof(double) * M * N);
+    cudaMalloc((void **)&dummy, sizeof(double) * M * N);
+    cudaMalloc((void **)&dummy2, sizeof(double) * M * N);
+
+    // C1 and C2 are same. We just have two copies to compare results
+    createMATS_transposeB(A, B, C1, C2, B_t, M, N, K);
+
+    cudaMemcpy(dA, A, sizeof(double) * M * K, cudaMemcpyHostToDevice);
+    cudaMemcpy(dB, B, sizeof(double) * K * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dB_t, B_t, sizeof(double) * N * K, cudaMemcpyHostToDevice);
+    cudaMemcpy(dC1, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dC2, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dummy, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+
+
+    /* Warm up GPU before we run. We run one extra CuBlas */
+    cudaError_t cudaStat;
+    cublasStatus_t stat;
+    cublasHandle_t handle;
+    stat = cublasCreate(&handle);
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+        std::cerr << "CUBLAS initialization failed!" << std::endl;
+        return;
+    }
+
+    stat = cublasDgemm (handle,
+                          CUBLAS_OP_N, CUBLAS_OP_N,
+                          M, N, K,
+                          &alpha,
+                          dA, M,
+                          dB, K,
+                          &beta,
+                          dummy, M);
+
+    /* Compute reference solution and time the CuBlas */
+    double refstart = MPI_Wtime();
+    for(int i = 0; i < num_itrs; i++) {
+        stat = cublasDgemm (handle,
+                          CUBLAS_OP_N, CUBLAS_OP_N,
+                          M, N, K,
+                          &alpha,
+                          dA, M,
+                          dB, K,
+                          &beta,
+                          dC2, M);
+    }
+    double refend = MPI_Wtime();
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+       std::cerr << "CUBLAS gemm error at " << __FILE__ << ":" << __LINE__ << std::endl;
+    }
+
+    cudaMemcpy(C2, dC2, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+    check_launch("Reference GEMM");
+
+    /* We are calling your GEMM function here */
+    int err;
+    err = myGEMM_no_tB(dA, dB_t, dummy, dummy2, alpha, beta, M, N, K);
+    check_launch("My GEMM dummy");
+
+    double mystart = MPI_Wtime();
+    for(int i = 0; i < num_itrs; i++) {
+        err = myGEMM_no_tB(dA, dB_t, dC1, dD1, alpha, beta, M, N, K);
+        // err = myGEMM(dA, dB, dC1, &alpha, &beta, M, N, K);
+    }
+    double myend = MPI_Wtime();
+
+    /* This is to check for cuda error status */
+    check_launch("myGEMM_no_overwrite");
+
+    /* This error code is for your own debugging, it does not catch
+       illegal memory accesses or bad kernel launches */
+    if(err!=0) {
+        std::cout << "Error in my GEMM. Error code: " << err << std::endl;
+    }
+
+    cudaMemcpy(D1, dD1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(D1, dC1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+
+    int fail = compareGEMMResults(D1, C2, M, N);
+    if (fail == 0) {       
+        std::cout << "Time for reference GEMM implementation: " 
+            << refend - refstart << std::endl;
+        std::cout << "Time for my GEMM implementation: " 
+            << myend - mystart << std::endl;        
+    }
+
+    free(A); 
+    free(B); 
+    free(B_t);
+    free(C1); 
+    free(C2);
+    free(D1);
+    cudaFree(dA); 
+    cudaFree(dB); 
+    cudaFree(dB_t);
+    cudaFree(dC1); 
+    cudaFree(dC2); 
+    cudaFree(dD1);
+}
+
+void BenchmarkGEMM_no_tB() {
+
+    std::cout << std::endl << "BenchmarkGEMM_no_overwrite_transposeB" 
+        << std::endl;
+
+    /* First GEMM Problem Size */
+    int M = 800*SCALE, N = 1000*SCALE, K = 784*SCALE;
+
+    std::cout << std::endl << "Starting GEMM: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    TestGEMM_no_overwrite_transposeB(M, N, K);
+
+    std::cout << "Completed GEMM 1" << std::endl;
+
+    M = 100, N = 800, K = 784;
+    std::cout << std::endl << "Starting GEMM 3: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    TestGEMM_no_overwrite_transposeB(M, N, K);
+
+    M = 10, N = 800, K = 100;
+    std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    TestGEMM_no_overwrite_transposeB(M, N, K);
+}
