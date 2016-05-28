@@ -654,7 +654,7 @@ int myGEMM_no_tB(double* A, double* B, double* C, double* D,
 
 	myGEMM_no_tB_kernel <<<M, N>>> (A, B, C, D, alpha, beta, M, N, K);
 
-	check_launch("myGEMM_no_tb_kernel");
+	check_launch("myGEMM_no_tB_kernel");
 	
 	return 0;
 }
