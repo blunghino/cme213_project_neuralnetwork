@@ -646,14 +646,14 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 
 // if (rank == 0) {
 //       std::cout << rank << " g_Db1\n" << g_Db1 << std::endl;
-//       // arma::mat DW0_diff = g_DW0 - (DW0/num_procs);
-//       // arma::mat DW1_diff = g_DW1 - (DW1/num_procs);
-//       // std::cout << rank << " Db0 diff\n" << g_Db0 - (Db0/num_procs) << std::endl;
-//       std::cout << rank << " Db1 diff\n" << g_Db1 - (Db1/num_procs) << std::endl;
+//       // arma::mat DW0_diff = g_DW0 - (DW0);
+//       // arma::mat DW1_diff = g_DW1 - (DW1);
+//       // std::cout << rank << " Db0 diff\n" << g_Db0 - (Db0) << std::endl;
+//       std::cout << rank << " Db1 diff\n" << g_Db1 - (Db1) << std::endl;
 //       // std::cout << rank << " DW0 diff\n" << DW0_diff.row(0) << std::endl;
 //       // std::cout << rank << " DW1 diff\n" << DW1_diff.row(0) << std::endl;
 // }
-// std::cout << rank << " GPU Db1\n" << Db1 / num_procs << std::endl;
+// std::cout << rank << " GPU Db1\n" << Db1 << std::endl;
 
       // UPDATES
       nn.W[0] -= DW0 * learning_rate;
