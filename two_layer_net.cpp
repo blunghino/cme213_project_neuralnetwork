@@ -533,8 +533,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double learning_rate, double reg, 
     const int epochs, const int batch_size, bool grad_check, int print_every, int debug)
 {
-  int rank, num_procs;
-  MPI_SAFE_CALL (MPI_Comm_size (MPI_COMM_WORLD, &num_procs));
+  int rank;
   MPI_SAFE_CALL (MPI_Comm_rank (MPI_COMM_WORLD, &rank));
 
   // TRANSPOSED
@@ -630,10 +629,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
         // mallocs
         arma::mat X_batch_buffer = X_batch.cols(n_images*prank, n_images*(prank+1)-1);
         arma::mat y_batch_buffer = y_batch.cols(n_images*prank, n_images*(prank+1)-1);
-        arma::mat DW0_local = zeros(n_1, n_0);
-        arma::mat DW1_local = zeros(n_2, n_1);
-        arma::mat Db0_t_local = = zeros(n_1, n_images);
-        arma::mat Db1_t_local = zeros(n_2, n_images);
+        arma::mat DW0_local = arma::zeros(n_1, n_0);
+        arma::mat DW1_local = arma::zeros(n_2, n_1);
+        arma::mat Db0_t_local = arma::zeros(n_1, n_images);
+        arma::mat Db1_t_local = arma::zeros(n_2, n_images);
 
         // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
         int gpu_success = gpu_train(X_batch_buffer.memptr(), y_batch_buffer.memptr(), W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
@@ -642,8 +641,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 
         DW0 += DW0_local;
         DW1 += DW1_local;
-        Db0 += Db0_t_local;
-        Db1 += Db1_t_local;
+        Db0_t += Db0_t_local;
+        Db1_t += Db1_t_local;
 
       }
 
@@ -651,16 +650,15 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       Db0 = arma::sum(Db0_t, 1).t();
       Db1 = arma::sum(Db1_t, 1).t();
 
-// if (rank == 0) {
-//       std::cout << rank << " g_Db1\n" << g_Db1 << std::endl;
-//       // arma::mat DW0_diff = g_DW0 - (DW0/num_procs);
-//       // arma::mat DW1_diff = g_DW1 - (DW1/num_procs);
-//       // std::cout << rank << " Db0 diff\n" << g_Db0 - (Db0/num_procs) << std::endl;
-//       std::cout << rank << " Db1 diff\n" << g_Db1 - (Db1/num_procs) << std::endl;
-//       // std::cout << rank << " DW0 diff\n" << DW0_diff.row(0) << std::endl;
-//       // std::cout << rank << " DW1 diff\n" << DW1_diff.row(0) << std::endl;
-// }
-// std::cout << rank << " GPU Db1\n" << Db1 / num_procs << std::endl;
+      std::cout << " g_Db1\n" << g_Db1 << std::endl;
+      std::cout << " pseudo parallel Db1\n" << Db1 / num_procs << std::endl;
+
+      arma::mat DW0_diff = g_DW0 - (DW0/num_procs);
+      arma::mat DW1_diff = g_DW1 - (DW1/num_procs);
+      std::cout  << " Db0 diff\n" << g_Db0 - (Db0/num_procs) << std::endl;
+      std::cout  << " Db1 diff\n" << g_Db1 - (Db1/num_procs) << std::endl;
+      std::cout  << " DW0 diff\n" << DW0_diff.row(0) << std::endl;
+      std::cout  << " DW1 diff\n" << DW1_diff.row(0) << std::endl;
 
       // UPDATES
       nn.W[0] -= DW0 * learning_rate / num_procs;
