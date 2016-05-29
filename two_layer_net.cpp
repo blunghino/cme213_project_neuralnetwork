@@ -6,8 +6,8 @@
 #include "mpi.h"
 #include "iomanip"
 
-#define BUGIDX 775
-#define BUGINC 30
+#define BUGIDX 0
+#define BUGINC 10
 
 #define BUG_EPOCH 1
 #define BUG_BATCH 1
@@ -159,6 +159,14 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   g_Dz1_t = dz1.t();
   g_DW0 = bpgrads.dW[0];
 
+  // std::cout << "DW0\n" << g_DW0.col(BUGIDX) << std::endl;
+
+  // std::cout << "DW1\n" << g_DW1.col(BUGIDX) << std::endl;
+
+  // std::cout << "Db0\n" << g_Db0 << std::endl;
+
+  // std::cout << "Db1\n" << g_Db1 << std::endl;
+
   // std::cout << "CPU z1_t" << std::endl;
   // arma::mat z1_t = bpcache.z[0].t();
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
@@ -194,6 +202,7 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   //   std::cout << i << ": " << da1_t.memptr()[i] << std::endl;
   // }
 
+  // arma::mat dz1_t = dz1.t();
   // std::cout << "\nCPU Dz1_t " <<  std::endl; 
   // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
   //   std::cout << i << ": " << dz1_t.memptr()[i] << std::endl;
@@ -548,32 +557,44 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
      and therefore goes from 0 to epochs*num_batches */
   int iter = 0;
 
-  for (int epoch = 0; epoch < epochs; ++epoch) {
-  // for (int epoch = 0; epoch < BUG_EPOCH; ++epoch) {
+  // hard coded for pseudo parallel
+  int num_procs = 4;
+
+  // for (int epoch = 0; epoch < epochs; ++epoch) {
+  for (int epoch = 0; epoch < BUG_EPOCH; ++epoch) {
 
     int num_batches = (N + batch_size - 1) / batch_size;
-    // for (int batch = 0; batch < BUG_BATCH; ++batch) {
-    for (int batch = 0; batch < num_batches; ++batch) {
-
+    for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    // for (int batch = 0; batch < num_batches; ++batch) {
       // dimensions
       int n_images = batch_size / num_procs;
       int n_0 = nn.H[0];
       int n_1 = nn.H[1];
       int n_2 = nn.H[2];
 
+      arma::mat X_batch;
+      arma::mat y_batch;
+      // double* X_batch_mem;
+      // double* y_batch_mem;
+
       if (batch == num_batches - 1) {
         n_images = (N % batch_size) / num_procs;
       }
+
+      // subset by row number
+      int last_col = std::min((batch + 1)*batch_size-1, N-1);
+      X_batch = X_t.cols (batch * batch_size, last_col);
+      y_batch = y_t.cols (batch * batch_size, last_col);
+      // X_batch_mem = X_batch.memptr();
+      // y_batch_mem = y_batch.memptr();    
 
       // new matrices 
       arma::mat Db0_t = arma::zeros(n_1, n_images);
       arma::mat Db1_t = arma::zeros(n_2, n_images);
       arma::mat DW0 = arma::zeros(n_1, n_0);
       arma::mat DW1 = arma::zeros(n_2, n_1);
-      arma::mat Db0(nn.b[0]);
-      arma::mat Db1(nn.b[1]);
-      arma::mat X_batch;
-      arma::mat y_batch;
+      arma::mat Db0;
+      arma::mat Db1;
 
       // sizes
       int X_size = n_images * n_0;
@@ -582,13 +603,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       int W1_size = n_2 * n_1;
       int b0_size = n_1 * n_images;
       int b1_size = n_2 * n_images;
-      // mallocs
-      double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
-      double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
-      double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
-      double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
-      double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
-      double* Db1_t_local = (double*) malloc(sizeof(double) * b1_size);
       // arma pointers
       double* W0_mem = nn.W[0].memptr();
       double* W1_mem = nn.W[1].memptr();
@@ -596,25 +610,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       double* DW1_mem = DW1.memptr();
       double* Db0_t_mem = Db0_t.memptr();
       double* Db1_t_mem = Db1_t.memptr();
-      // double* X_batch_mem;
-      // double* y_batch_mem;
-
-      if (rank == 0) {
-        // subset by row number
-        int last_col = std::min((batch + 1)*batch_size-1, N-1);
-        X_batch = X_t.cols (batch * batch_size, last_col);
-        y_batch = y_t.cols (batch * batch_size, last_col);
-        // X_batch_mem = X_batch.memptr();
-        // y_batch_mem = y_batch.memptr();
-      }
-
-      /*
-       * Possible Implementation:
-       * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
-       * 2. compute each sub-batch of images' contribution to network coefficient updates
-       * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
-       * 4. update local network coefficient at each node
-       */
 
       // update every loop
       arma::mat b0_t = arma::repmat(nn.b[0].t(), 1, n_images);
@@ -622,27 +617,39 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       double* b0_t_mem = b0_t.memptr();
       double* b1_t_mem = b1_t.memptr();
 
-      // scatter to all GPUS
-      MPI_SAFE_CALL(MPI_Scatter(X_batch.memptr(), X_size, MPI_DOUBLE, X_batch_buffer, 
-                                X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Scatter(y_batch.memptr(), y_size, MPI_DOUBLE, y_batch_buffer, 
-                                y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
+        /*
+         * Possible Implementation:
+         * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
+         * 2. compute each sub-batch of images' contribution to network coefficient updates
+         * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
+         * 4. update local network coefficient at each node
+         */
 
-      // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
-      int gpu_success = gpu_train(X_batch_buffer, y_batch_buffer, W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
-                                  DW0_local, DW1_local, Db0_t_local, Db1_t_local,
-                                  n_images, n_0, n_1, n_2, reg, learning_rate, n_images);
+      for (int prank = 0; prank < num_procs; ++prank) {
 
-      // MPI_Allreduce() on DW0, DW1, Db0_t, Db1_t
-      MPI_SAFE_CALL(MPI_Allreduce(DW0_local, DW0_mem, W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Allreduce(DW1_local, DW1_mem, W1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Allreduce(Db0_t_local, Db0_t_mem, b0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Allreduce(Db1_t_local, Db1_t_mem, b1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+        // mallocs
+        arma::mat X_batch_buffer = X_batch.cols(n_images*prank, n_images*(prank+1)-1);
+        arma::mat y_batch_buffer = y_batch.cols(n_images*prank, n_images*(prank+1)-1);
+        arma::mat DW0_local = zeros(n_1, n_0);
+        arma::mat DW1_local = zeros(n_2, n_1);
+        arma::mat Db0_t_local = = zeros(n_1, n_images);
+        arma::mat Db1_t_local = zeros(n_2, n_images);
+
+        // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
+        int gpu_success = gpu_train(X_batch_buffer.memptr(), y_batch_buffer.memptr(), W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
+                                    DW0_local.memptr(), DW1_local.memptr(), Db0_t_local.memptr(), Db1_t_local.memptr(),
+                                    n_images, n_0, n_1, n_2, reg, learning_rate, n_images);
+
+        DW0 += DW0_local;
+        DW1 += DW1_local;
+        Db0 += Db0_t_local;
+        Db1 += Db1_t_local;
+
+      }
 
       // b0 and b1 need to be compressed back to a single vector
       Db0 = arma::sum(Db0_t, 1).t();
       Db1 = arma::sum(Db1_t, 1).t();
-
 
 // if (rank == 0) {
 //       std::cout << rank << " g_Db1\n" << g_Db1 << std::endl;
@@ -670,15 +677,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
          matrices in the TwoLayerNet nn.  */
       if(debug && rank == 0 && print_flag)
         write_diff_gpu_cpu(nn, iter, error_file);
-
-      // freeze
-      free(X_batch_buffer);
-      free(y_batch_buffer);
-      free(DW0_local);
-      free(DW1_local);
-      free(Db0_t_local);
-      free(Db1_t_local);
-
+      
       iter++;
 
     }
