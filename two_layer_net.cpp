@@ -290,12 +290,12 @@ void train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double lear
   int iter = 0;
   int print_flag = 0;
 
-  for (int epoch = 0 ; epoch < BUG_EPOCH; ++epoch) {
-  // for (int epoch = 0 ; epoch < epochs; ++epoch) {
+  // for (int epoch = 0 ; epoch < BUG_EPOCH; ++epoch) {
+  for (int epoch = 0 ; epoch < epochs; ++epoch) {
     int num_batches = (int) ceil ( N / (float) batch_size);    
 
-    for (int batch = 0; batch < BUG_BATCH; ++batch) {
-    // for (int batch = 0; batch < num_batches; ++batch) {
+    // for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    for (int batch = 0; batch < num_batches; ++batch) {
       int last_row = std::min((batch + 1)*batch_size-1, N-1);
       arma::mat X_batch = X.rows (batch * batch_size, last_row);
       arma::mat y_batch = y.rows (batch * batch_size, last_row);
@@ -315,7 +315,7 @@ void train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, double lear
           numgrad (nn, X_batch, y_batch, reg, numgrads);
           assert (gradcheck (numgrads, bpgrads));
         }
-        std::cout << "Loss at iteration " << iter << " of epoch " << epoch << "/" << epochs << " = " << loss (nn, bpcache.yc, y_batch, reg) << "\n";
+        // std::cout << "Loss at iteration " << iter << " of epoch " << epoch << "/" << epochs << " = " << loss (nn, bpcache.yc, y_batch, reg) << "\n";
       }
 
       // Gradient descent step
@@ -631,7 +631,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
       int gpu_success = gpu_train(X_batch_buffer, y_batch_buffer, W0_mem, W1_mem, b0_t_mem, b1_t_mem, 
                                   DW0_local, DW1_local, Db0_t_local, Db1_t_local,
-                                  n_images, n_0, n_1, n_2, reg, learning_rate, n_images);
+                                  n_images, n_0, n_1, n_2, reg/(double)num_procs, learning_rate, n_images*num_procs);
 
       // MPI_Allreduce() on DW0, DW1, Db0_t, Db1_t
       MPI_SAFE_CALL(MPI_Allreduce(DW0_local, DW0_mem, W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
@@ -656,10 +656,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
 // std::cout << rank << " GPU Db1\n" << Db1 / num_procs << std::endl;
 
       // UPDATES
-      nn.W[0] -= DW0 * learning_rate / num_procs;
-      nn.W[1] -= DW1 * learning_rate / num_procs; 
-      nn.b[0] -= Db0 * learning_rate / num_procs;
-      nn.b[1] -= Db1 * learning_rate / num_procs;
+      nn.W[0] -= DW0 * learning_rate;
+      nn.W[1] -= DW1 * learning_rate;
+      nn.b[0] -= Db0 * learning_rate;
+      nn.b[1] -= Db1 * learning_rate;
 
       if(print_every <= 0)
         print_flag = batch == 0;
