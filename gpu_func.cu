@@ -202,8 +202,8 @@ void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* 
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
 
-	const int B_size = K * N;
-	const int A_size = M * K;
+	const int m_idx = block_row*side+row;
+	const int n_idx = block_col*side+col;
 
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
@@ -221,13 +221,13 @@ void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* 
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		if (A_idx + Asub_idx < A_size) {
+		if (m_idx < M && k*side + col < K) {
 			Ashared[row][col] = Asub[Asub_idx];
 		}
 		else {
 			Ashared[row][col] = 0;
 		}
-		if (B_idx + Bsub_idx < B_size) {
+		if (k * side + row < K && n_idx < N) {
 			Bshared[row][col] = Bsub[Bsub_idx];
 		}
 		else {
@@ -246,7 +246,7 @@ void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* 
 	}
 	
 	// check bounds
-	if (Csub_idx + C_idx < M * N) {
+	if (n_idx < N && m_idx < M) {
 		// set value
 		Csub[Csub_idx] = Cval;
 	}
@@ -309,8 +309,8 @@ void myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, doub
 	double* Csub = &(C[C_idx]);
 	double* Dsub = &(D[C_idx]);
 
-	const int B_size = K * N;
-	const int A_size = M * K;
+	const int m_idx = block_row*side+row;
+	const int n_idx = block_col*side+col;
 
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
@@ -328,13 +328,13 @@ void myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, doub
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		if (A_idx + Asub_idx < A_size) {
+		if (m_idx < M && k*side + col < K) {
 			Ashared[row][col] = Asub[Asub_idx];
 		}
 		else {
 			Ashared[row][col] = 0;
 		}
-		if (B_idx + Bsub_idx < B_size) {
+		if (k * side + row < K && n_idx < N) {
 			Bshared[row][col] = Bsub[Bsub_idx];
 		}
 		else {
@@ -353,7 +353,7 @@ void myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, doub
 	}
 	
 	// check bounds
-	if (Asub_idx + C_idx < M * N) {
+	if (n_idx < N && m_idx < M) {
 		Dsub[Asub_idx] = alpha * Cval + beta * Csub[Asub_idx];
 	}
 }
@@ -408,13 +408,13 @@ void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 
 	const int Asub_idx = M * col + row;
 	const int Bsub_idx = K * col + row;
+	
+	const int m_idx = block_row*side+row;
+	const int n_idx = block_col*side+col;
 
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
 	double* Dsub = &(D[C_idx]);
-
-	const int B_size = K * N;
-	const int A_size = M * K;
 
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
@@ -432,13 +432,13 @@ void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 		__shared__ double Bshared[side][side];
 
 		// assign elements to shared memory
-		if (A_idx + Asub_idx < A_size) {
+		if (m_idx < M && k*side + col < K) {
 			Ashared[row][col] = Asub[Asub_idx];
 		}
 		else {
 			Ashared[row][col] = 0;
 		}
-		if (B_idx + Bsub_idx < B_size) {
+		if (k * side + row < K && n_idx < N) { 
 			Bshared[row][col] = Bsub[Bsub_idx];
 		}
 		else {
@@ -453,11 +453,10 @@ void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 		}
 
 		__syncthreads();
-
 	}
 	
 	// check bounds
-	if (Asub_idx + C_idx < M * N) {
+	if (n_idx < N && m_idx < M) {
 		Cval = alpha * Cval + beta * Csub[Asub_idx];
 		// set value
 		Dsub[Asub_idx] = Cval;	}
@@ -514,12 +513,15 @@ void myGEMM_shared_kernel(double* A, double* B, double* C,
 	const int Asub_idx = M * col + row;
 	const int Bsub_idx = K * col + row;
 
+	const int m_idx = block_row*side+row;
+	const int n_idx = block_col*side+col;
+
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
 
-	const int B_size = K * N;
-	const int A_size = M * K;
-
+		// allocate shared memory
+		__shared__ double Ashared[side][side];
+		__shared__ double Bshared[side][side];
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
 
@@ -531,18 +533,14 @@ void myGEMM_shared_kernel(double* A, double* B, double* C,
 		double* Asub = &(A[A_idx]);
 		double* Bsub = &(B[B_idx]);
 
-		// allocate shared memory
-		__shared__ double Ashared[side][side];
-		__shared__ double Bshared[side][side];
-
 		// assign elements to shared memory
-		if (A_idx + Asub_idx < A_size) {
+		if (m_idx < M && k*side + col < K) {
 			Ashared[row][col] = Asub[Asub_idx];
 		}
 		else {
 			Ashared[row][col] = 0;
 		}
-		if (B_idx + Bsub_idx < B_size) {
+		if (k * side + row < K && n_idx < N) { 
 			Bshared[row][col] = Bsub[Bsub_idx];
 		}
 		else {
@@ -555,22 +553,14 @@ void myGEMM_shared_kernel(double* A, double* B, double* C,
 
 		// do matrix multiply
 		for (int idx = 0; idx < side; ++idx) {
-			// bounds check (do you still need this?)
-			// if (idx + idx_check < K) {
-			// 	Cval += Ashared[row][idx] * Bshared[idx][col];
-			// }
 			Cval += Ashared[row][idx] * Bshared[idx][col];
 		}
 
 		__syncthreads();
-
-
-	// printf("\n\n loop \n block_row: %d \n block_col: %d \n row: %d \n col: %d \n A_idx: %d \n B_idx: %d \n k%d \n idx_check: %d \n",
-	//           block_row, block_col, row, col, A_idx, B_idx, k, idx_check);
 	}
 	
 	// check bounds
-	if (Asub_idx + C_idx < M * N) {
+	if (n_idx < N && m_idx < M) { 
 		// evaluate the rest of the GEMM equation
 		Cval = alpha * Cval + beta * Csub[Asub_idx];
 		// set value
@@ -581,7 +571,7 @@ void myGEMM_shared_kernel(double* A, double* B, double* C,
 /* 
 Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C 
 */
-int myGEMM_shared(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
 	/* TODO: Write an efficient GEMM implementation on GPU */
 
 	// A, B, C are already memcopied to device ie we already have device pointers
@@ -702,8 +692,12 @@ void myGEMM_simple_kernel(double* A, double* B, double* C, double alpha, double 
 	C[idx] = Cval + C[idx] * beta;
 }
 
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
+int myGEMM_simple(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
 	myGEMM_simple_kernel <<<M, N>>> (A, B, C, *alpha, *beta, M, N, K);
 	check_launch("myGEMM_simple_kernel");
 	return 0;
 }
+
+// int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+// 	myGEMM_shared2 <<<>>>
+// }
