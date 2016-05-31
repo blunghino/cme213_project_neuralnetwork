@@ -168,6 +168,20 @@ int main(int argc, char* argv[]) {
 
         case 8: // test myGEMM_no_overwrite_transposeB in isolation
             break;
+        case 9:
+            break;
+        case 10:
+                    reg = 1e-4;
+            learning_rate = 0.025;
+            num_epochs = 1;
+    // case 3 but with SMALLER batch size
+            batch_size = 200;
+            num_neuron = 100;
+            run_seq = 1;
+            debug = 1;
+            print_every = 1;
+            break;
+    
     }
 
     if(grade == 4) {
