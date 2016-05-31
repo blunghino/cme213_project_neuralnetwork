@@ -555,6 +555,14 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
     // for (int batch = 0; batch < BUG_BATCH; ++batch) {
     for (int batch = 0; batch < num_batches; ++batch) {
 
+      /*
+       * Possible Implementation:
+       * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
+       * 2. compute each sub-batch of images' contribution to network coefficient updates
+       * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
+       * 4. update local network coefficient at each node
+       */
+
       // dimensions
       int n_images = batch_size / num_procs;
       int n_0 = nn.H[0];
@@ -607,14 +615,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
         // X_batch_mem = X_batch.memptr();
         // y_batch_mem = y_batch.memptr();
       }
-
-      /*
-       * Possible Implementation:
-       * 1. subdivide input batch of images and `MPI_scatter()' to each MPI node
-       * 2. compute each sub-batch of images' contribution to network coefficient updates
-       * 3. reduce the coefficient updates and broadcast to all nodes with `MPI_Allreduce()'
-       * 4. update local network coefficient at each node
-       */
 
       // update every loop
       arma::mat b0_t = arma::repmat(nn.b[0].t(), 1, n_images);
