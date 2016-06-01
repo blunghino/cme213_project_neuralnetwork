@@ -6,11 +6,14 @@
 #include "mpi.h"
 #include "iomanip"
 
-#define BUGIDX 775
-#define BUGINC 30
-
-#define BUG_EPOCH 1
-#define BUG_BATCH 1
+// // for debugging
+// arma::mat g_DW1;
+// arma::mat g_diff_t;
+// arma::mat g_Da1_t;
+// arma::mat g_Dz1_t;
+// arma::mat g_DW0;
+// arma::mat g_Db0;
+// arma::mat g_Db1;
 
 #define MPI_SAFE_CALL( call ) do {                               \
     int err = call;                                              \
@@ -143,57 +146,12 @@ void backprop (TwoLayerNet &nn, const arma::mat& y, double reg, const struct cac
   bpgrads.dW[0] = dz1.t() * bpcache.X + reg * nn.W[0];
   bpgrads.db[0] = arma::sum(dz1, 0);
 
-  g_diff_t = diff.t();
-  g_Db0 = bpgrads.db[0];
-  g_Db1 = bpgrads.db[1];
-  g_DW1 = bpgrads.dW[1];
-  g_Dz1_t = dz1.t();
-  g_DW0 = bpgrads.dW[0];
-
-  // std::cout << "CPU z1_t" << std::endl;
-  // arma::mat z1_t = bpcache.z[0].t();
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << z1_t.memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nCPU a1_t" << std::endl;
-  // arma::mat a1_t = bpcache.a[0].t();
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << a1_t.memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nCPU diff.t" << std::endl;
-  // arma::mat diff_t = diff.t();
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << diff_t.memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nCPU W1" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << nn.W[1].memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nCPU dW[1] " <<  std::endl; 
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << bpgrads.dW[1].memptr()[i] << std::endl;
-  // }
-
-  // g_Da1_t = da1.t();
-  // arma::mat da1_t = da1.t();
-  // std::cout << "\nCPU Da1_t " <<  std::endl; 
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << da1_t.memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nCPU Dz1_t " <<  std::endl; 
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << dz1_t.memptr()[i] << std::endl;
-  // }
-
-  // std::cout << "\nCPU W0" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << nn.W[0].memptr()[i] << std::endl;
-  // }
+  // g_diff_t = diff.t();
+  // g_Db0 = bpgrads.db[0];
+  // g_Db1 = bpgrads.db[1];
+  // g_DW1 = bpgrads.dW[1];
+  // g_Dz1_t = dz1.t();
+  // g_DW0 = bpgrads.dW[0];
 
 }
 
@@ -428,7 +386,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   // arma::mat DW1_mat = arma::mat(n_2, n_1);
   // cudaMemcpy(DW1_mat.memptr(), d_DW1, sizeof(double)*W1_size, cudaMemcpyDeviceToHost);
 
-  // arma::mat W1_mat(W1, n_2, n_1, false);
+  // arma::mat W1_mat(W1, n_2, n_1, true);
 
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 
@@ -445,9 +403,6 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // arma::mat diff_Dz1_t = g_Dz1_t - Dz1_t_mat;
   // std::cout << "\ndiff Dz1_t " <<  std::endl; 
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << diff_Dz1_t.memptr()[i] << std::endl;
-  // }  
 
   // DW0.T = Dz1.T * X.T + reg * W0
   myGEMM_no_overwrite_transposeB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
@@ -463,10 +418,6 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // arma::mat diff_DW0 = g_DW0 - DW0_mat;
   // std::cout << "\n GPU diff DW0" << std::endl;
-  // for (int i = BUGIDX; i < BUGIDX + BUGINC; ++i) {
-  //   std::cout << i << ": " << diff_DW0.memptr()[i] << std::endl;
-  // }
-
 
   // arma::mat Db0_t_mat = arma::mat(n_1, n_images);
   // cudaMemcpy(Db0_t_mat.memptr(), d_Dz1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
@@ -543,10 +494,9 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   int iter = 0;
 
   for (int epoch = 0; epoch < epochs; ++epoch) {
-  // for (int epoch = 0; epoch < BUG_EPOCH; ++epoch) {
 
     int num_batches = (N + batch_size - 1) / batch_size;
-    // for (int batch = 0; batch < BUG_BATCH; ++batch) {
+    
     for (int batch = 0; batch < num_batches; ++batch) {
 
       // dimensions
