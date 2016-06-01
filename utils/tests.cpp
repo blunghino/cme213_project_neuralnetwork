@@ -308,18 +308,13 @@ void BenchmarkGEMM() {
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
 
-    M = 10, N = 800, K = 100;
+    M = 64, N = 16, K = 4;
     std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
 
-        M = 100, N = 200, K = 784;
+    M = 128, N = 32, K = 32;
     std::cout << std::endl << "Starting GEMM 5: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM(M, N, K);
-
-    M = 10, N = 200, K = 100;
-    std::cout << std::endl << "Starting GEMM 6: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
 }
@@ -625,16 +620,6 @@ void BenchmarkGEMM_no_overwrite_transposeB() {
     std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM_no_overwrite_transposeB(M, N, K);
-
-    M = 100, N = 200, K = 784;
-    std::cout << std::endl << "Starting GEMM 5: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM_no_overwrite_transposeB(M, N, K);
-
-    M = 10, N = 200, K = 100;
-    std::cout << std::endl << "Starting GEMM 6: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM_no_overwrite_transposeB(M, N, K);
 }
 
 void test_sigmoid_GPU() {
@@ -645,7 +630,7 @@ void test_sigmoid_GPU() {
     std::cout << std::endl << "test_sigmoid_GPU" 
         << std::endl;
 
-    int M = 100*SCALE, N = 200*SCALE;
+    int M = 100*SCALE, N = 800*SCALE;
 
     std::cout << std::endl << "Starting test_sigmoid_GPU: " << "M = " << M << "; N = " 
         << N << std::endl;
@@ -844,16 +829,6 @@ void BenchmarkGEMM_no_tB() {
 
     M = 10, N = 800, K = 100;
     std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM_no_tB(M, N, K);
-
-    M = 100, N = 200, K = 784;
-    std::cout << std::endl << "Starting GEMM 5: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM_no_tB(M, N, K);
-
-    M = 10, N = 200, K = 100;
-    std::cout << std::endl << "Starting GEMM 6: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM_no_tB(M, N, K);
 }

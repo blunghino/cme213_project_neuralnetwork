@@ -519,9 +519,10 @@ void myGEMM_shared_kernel(double* A, double* B, double* C,
     // get pointer into sub matrix for this kernel
 	double* Csub = &(C[C_idx]);
 
-		// allocate shared memory
-		__shared__ double Ashared[side][side];
-		__shared__ double Bshared[side][side];
+	// allocate shared memory
+	__shared__ double Ashared[side][side];
+	__shared__ double Bshared[side][side];
+
 	// loop over sub matrices (K is width of A)
 	for (int k = 0; k < ((K + side - 1) / side); ++k) {
 
@@ -571,7 +572,7 @@ void myGEMM_shared_kernel(double* A, double* B, double* C,
 /* 
 Routine to perform an in-place GEMM operation, i.e., C := alpha*A*B + beta*C 
 */
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
+int myGEMM_shared(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K){
 	/* TODO: Write an efficient GEMM implementation on GPU */
 
 	// A, B, C are already memcopied to device ie we already have device pointers
@@ -698,6 +699,62 @@ int myGEMM_simple(double* A, double* B, double* C, double* alpha, double* beta, 
 	return 0;
 }
 
-// int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
-// 	myGEMM_shared2 <<<>>>
-// }
+template <int DIM_X, int DIM_Y>
+__global__
+void ferrari_GEMM(double* A, double* B, double*C, 
+				double alpha, double beta, int M, int N, int K) {
+
+	const int dim_x = blockDim.x;
+	const int dim_y = blockDim.y;
+
+	double Cval[DIM_X] = {0};
+ 
+	// indices into the C matrix (C_dim_y is 64 while dim_y is 4)
+	const int C_blockDim_row = dim_y * dim_x;
+	const int C_thread_row = threadIdx.y * dim_y +  threadIdx.x;
+
+	// 0 - K/4
+	for (int k = 0; k < (K + dim_y -1) / dim_y; ++k) {
+
+		__shared__ double Bshared[DIM_Y][DIM_X];
+
+		Bshared[threadIdx.y][threadIdx.x] = B[dim_x * K * blockIdx.x + threadIdx.y * k];
+
+		double a[DIM_Y];
+		for (int i = 0; i < dim_y; ++i) {
+			a[i] = A[M * (dim_y * k + i) + blockIdx.y * C_blockDim_row + C_thread_row];
+		}
+
+		__syncthreads();
+
+		for (int n = 0; n < dim_x; ++n) {
+
+			for (int i = 0; i < dim_y; ++i) {
+				Cval[n] += a[i] * Bshared[i][n];
+			}
+		}
+	}
+
+	for (int n = 0; n < dim_x; ++n) {
+		const int C_idx = M * (dim_x * blockIdx.x + n) + blockIdx.y * C_blockDim_row + C_thread_row;
+		C[C_idx] = alpha * Cval[n] + beta * C[C_idx];
+	}
+}
+
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+
+	const int threads_x = 16;
+	const int threads_y = 4;
+
+	int blocks_x = (N + threads_x -1) / threads_x;
+	int blocks_y = (M + threads_y*threads_x -1) / threads_y*threads_x;
+
+	dim3 blocks(blocks_x, blocks_y);
+	dim3 threads(threads_x, threads_y);
+
+	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> (A, B, C, *alpha, *beta, M, N, K);
+
+	check_launch("ferrari_GEMM");
+
+	return 0;
+}
