@@ -701,7 +701,7 @@ int myGEMM_simple(double* A, double* B, double* C, double* alpha, double* beta, 
 
 template <int DIM_X, int DIM_Y>
 __global__
-void ferrari_GEMM(double* A, double* B, double*C, 
+void bmw_GEMM(double* A, double* B, double*C, 
 				double alpha, double beta, int M, int N, int K) {
 
 	const int dim_x = blockDim.x;
@@ -732,9 +732,10 @@ void ferrari_GEMM(double* A, double* B, double*C,
 
 		// each thread copies 4 values into its local a
 		if (C_row_loc < M) {
-			// UNROLL
-			for (int i = 0; i < dim_y; ++i) {
-				if (dim_y * k + threadIdx.y < K) {
+
+			#pragma unroll
+			for (int i = 0; i < DIM_Y; ++i) {
+				if (dim_y * k + i < K) {
 					a[i] = A[M * (dim_y * k + i) + blockIdx.y * C_blockDim_row + C_thread_row];
 				}
 			}
@@ -744,16 +745,17 @@ void ferrari_GEMM(double* A, double* B, double*C,
 
 		#pragma unroll
 		for (int n = 0; n < DIM_X; ++n) {
-			// UNROLL
-			Cval[n] = a[0]*Bshared[0][n] + a[1]*Bshared[1][n] + a[2]*Bshared[2][n] + a[3]*Bshared[3][n];
+			Cval[n] += a[0]*Bshared[0][n] + a[1]*Bshared[1][n] + a[2]*Bshared[2][n] + a[3]*Bshared[3][n];
 		}
 
 		__syncthreads();
 	}
 
 	if (C_row_loc < M) {
-		for (int n = 0; n < dim_x; ++n) {
-			if (blockDim.x * blockIdx.x + n < N) {
+
+		#pragma unroll
+		for (int n = 0; n < DIM_X; ++n) {
+			if (dim_x * blockIdx.x + n < N) {
 				const int C_idx = M * (dim_x * blockIdx.x + n) + blockIdx.y * C_blockDim_row + C_thread_row;
 				C[C_idx] = alpha * Cval[n] + beta * C[C_idx];
 			}
@@ -765,14 +767,106 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 
 	const int threads_x = 16;
 	const int threads_y = 4;
+	const int C_blockDim_y = threads_x * threads_y;
 
+	int blocks_y = (M + C_blockDim_y -1) / C_blockDim_y;
 	int blocks_x = (N + threads_x -1) / threads_x;
-	int blocks_y = (M + threads_y*threads_x -1) / threads_y*threads_x;
 
 	dim3 blocks(blocks_x, blocks_y);
 	dim3 threads(threads_x, threads_y);
 
-	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> (A, B, C, *alpha, *beta, M, N, K);
+	bmw_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
+		(A, B, C, *alpha, *beta, M, N, K);
+
+	check_launch("bmw_GEMM");
+
+	return 0;
+}
+
+template <int DIM_X, int DIM_Y>
+__global__
+void ferrari_GEMM(double* A, double* B, double*C, 
+				double alpha, double beta, int M, int N, int K) {
+	// Array to store result
+	double Cval[DIM_X] = {0};
+
+	// 0-63
+    const int C_threadIdx_x = threadIdx.x * DIM_Y + threadIdx.x;
+    // less than N if in bounds
+    const int C_col = DIM_X * DIM_Y * blockIdx.x + C_threadIdx_x;
+    // less than M if in bounds
+	const int C_row = DIM_Y * blockIdx.y + threadIdx.y;
+
+    // 0 - K/4
+    for (int k = 0; k < (K + DIM_X -1) / DIM_X; ++k) {
+    	// shared mem subarray of A
+        __shared__ double Ashared[DIM_Y][DIM_X];
+        // local sub array of A
+        double Bsub[DIM_X] = {0};
+
+        // each thread fills one value of Ashared
+        const int A_col = DIM_X * k + threadIdx.x;
+        if (A_col < K && C_row < M) {
+        	Ashared[threadIdx.y][threadIdx.x] = A[M * A_col + C_row];
+        }
+        else {
+        	Ashared[threadIdx.y][threadIdx.x] = 0;
+        }
+
+        // each thread fills 4 values of Bsub
+        if (C_col < N) {
+        	#pragma unroll
+        	for (int i = 0; i < DIM_X; ++i) {
+        		const int B_row = DIM_X * k + i;
+        		if (B_row < K) {
+        			Bsub[i] = B[K * C_col + B_row];
+        		}
+        	}
+        }
+
+        __syncthreads();
+
+        // do dot product for each entry in 16x1
+        #pragma unroll
+        for (int m = 0; m < DIM_Y; ++m) {
+            Cval[m] += Bsub[0]*Ashared[m][0] + Bsub[1]*Ashared[m][1] + Bsub[2]*Ashared[m][2] + Bsub[3]*Ashared[m][3];
+        }
+
+        __syncthreads();
+
+    }
+
+    // update main matrix with result
+    if (C_col < N) {
+
+    	// change to straight memcpy??
+
+    	#pragma unroll
+    	for (int m = 0; m < DIM_Y; ++m) {
+    		const int C_row = DIM_Y * blockIdx.y + m;
+    		if (C_row < M) {
+    			const int C_idx = M * C_col + C_row;
+    			C[C_idx] = alpha * Cval[m] + beta * C[C_idx];
+    		}
+    	}
+    }
+
+}
+
+int myGEMM_ferrari(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+
+	const int threads_x = 4;
+	const int threads_y = 16;
+	const int C_blockDim_x = threads_x * threads_y;
+
+	int blocks_x = (N + C_blockDim_x -1) / C_blockDim_x;
+	int blocks_y = (M + threads_y -1) / threads_y;
+
+	dim3 blocks(blocks_x, blocks_y);
+	dim3 threads(threads_x, threads_y);
+
+	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
+		(A, B, C, *alpha, *beta, M, N, K);
 
 	check_launch("ferrari_GEMM");
 
