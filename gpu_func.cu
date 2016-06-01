@@ -763,7 +763,7 @@ void bmw_GEMM(double* A, double* B, double*C,
 	}
 }
 
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+int myGEMM_bmw(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
 
 	const int threads_x = 16;
 	const int threads_y = 4;
@@ -788,14 +788,14 @@ __global__
 void ferrari_GEMM(double* A, double* B, double*C, 
 				double alpha, double beta, int M, int N, int K) {
 	// Array to store result
-	double Cval[DIM_X] = {0};
+	double Cval[DIM_Y] = {0};
 
 	// 0-63
     const int C_threadIdx_x = threadIdx.x * DIM_Y + threadIdx.x;
     // less than N if in bounds
     const int C_col = DIM_X * DIM_Y * blockIdx.x + C_threadIdx_x;
     // less than M if in bounds
-	const int C_row = DIM_Y * blockIdx.y + threadIdx.y;
+	const int A_row = DIM_Y * blockIdx.y + threadIdx.y;
 
     // 0 - K/4
     for (int k = 0; k < (K + DIM_X -1) / DIM_X; ++k) {
@@ -806,8 +806,8 @@ void ferrari_GEMM(double* A, double* B, double*C,
 
         // each thread fills one value of Ashared
         const int A_col = DIM_X * k + threadIdx.x;
-        if (A_col < K && C_row < M) {
-        	Ashared[threadIdx.y][threadIdx.x] = A[M * A_col + C_row];
+        if (A_col < K && A_row < M) {
+        	Ashared[threadIdx.y][threadIdx.x] = A[M * A_col + A_row];
         }
         else {
         	Ashared[threadIdx.y][threadIdx.x] = 0;
@@ -839,8 +839,7 @@ void ferrari_GEMM(double* A, double* B, double*C,
     // update main matrix with result
     if (C_col < N) {
 
-    	// change to straight memcpy??
-
+    	// change to straight memcpy?
     	#pragma unroll
     	for (int m = 0; m < DIM_Y; ++m) {
     		const int C_row = DIM_Y * blockIdx.y + m;
@@ -853,7 +852,7 @@ void ferrari_GEMM(double* A, double* B, double*C,
 
 }
 
-int myGEMM_ferrari(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
 
 	const int threads_x = 4;
 	const int threads_y = 16;
