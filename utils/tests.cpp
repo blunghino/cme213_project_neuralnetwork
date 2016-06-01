@@ -287,10 +287,19 @@ void BenchmarkGEMM() {
 
     std::cout << std::endl << "Entering GEMM Benchmarking mode! Stand by." 
         << std::endl;
+        
+    int M = 64, N = 16, K = 4;
+    std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    TestGEMM(M, N, K);
+
+    M = 128, N = 32, K = 32;
+    std::cout << std::endl << "Starting GEMM 5: " << "M = " << M << "; N = " 
+        << N << "; K = " << K << std::endl;
+    TestGEMM(M, N, K);
 
     /* First GEMM Problem Size */
-    int M = 800*SCALE, N = 1000*SCALE, K = 784*SCALE;
-
+    M = 800*SCALE, N = 1000*SCALE, K = 784*SCALE;
     std::cout << std::endl << "Starting GEMM 1: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
@@ -305,16 +314,6 @@ void BenchmarkGEMM() {
 
     M = 100, N = 800, K = 784;
     std::cout << std::endl << "Starting GEMM 3: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM(M, N, K);
-
-    M = 64, N = 16, K = 4;
-    std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM(M, N, K);
-
-    M = 128, N = 32, K = 32;
-    std::cout << std::endl << "Starting GEMM 5: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
 }

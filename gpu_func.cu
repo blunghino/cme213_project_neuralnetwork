@@ -707,37 +707,57 @@ void ferrari_GEMM(double* A, double* B, double*C,
 	const int dim_x = blockDim.x;
 	const int dim_y = blockDim.y;
 
+	// array to write result
 	double Cval[DIM_X] = {0};
  
 	// indices into the C matrix (C_dim_y is 64 while dim_y is 4)
 	const int C_blockDim_row = dim_y * dim_x;
-	const int C_thread_row = threadIdx.y * dim_y +  threadIdx.x;
+	const int C_thread_row = threadIdx.y * dim_x + threadIdx.x;
+	const int C_row_loc = C_blockDim_row * blockIdx.y + C_thread_row;
 
 	// 0 - K/4
 	for (int k = 0; k < (K + dim_y -1) / dim_y; ++k) {
-
+		// shared mem subarray of B
 		__shared__ double Bshared[DIM_Y][DIM_X];
+		// local sub array of A
+		double a[DIM_Y] = {0};
 
-		Bshared[threadIdx.y][threadIdx.x] = B[dim_x * K * blockIdx.x + threadIdx.y * k];
+		// each thread copies one value into Bshared
+		if (dim_y * k + threadIdx.y < K && dim_x * blockIdx.x + threadIdx.x < N) {
+			Bshared[threadIdx.y][threadIdx.x] = B[K * (dim_x * blockIdx.x + threadIdx.x) + dim_y * k + threadIdx.y];
+		}
+		else {
+			Bshared[threadIdx.y][threadIdx.x] = 0;
+		}
 
-		double a[DIM_Y];
-		for (int i = 0; i < dim_y; ++i) {
-			a[i] = A[M * (dim_y * k + i) + blockIdx.y * C_blockDim_row + C_thread_row];
+		// each thread copies 4 values into its local a
+		if (C_row_loc < M) {
+			// UNROLL
+			for (int i = 0; i < dim_y; ++i) {
+				if (dim_y * k + threadIdx.y < K) {
+					a[i] = A[M * (dim_y * k + i) + blockIdx.y * C_blockDim_row + C_thread_row];
+				}
+			}
 		}
 
 		__syncthreads();
 
-		for (int n = 0; n < dim_x; ++n) {
-
-			for (int i = 0; i < dim_y; ++i) {
-				Cval[n] += a[i] * Bshared[i][n];
-			}
+		#pragma unroll
+		for (int n = 0; n < DIM_X; ++n) {
+			// UNROLL
+			Cval[n] = a[0]*Bshared[0][n] + a[1]*Bshared[1][n] + a[2]*Bshared[2][n] + a[3]*Bshared[3][n];
 		}
+
+		__syncthreads();
 	}
 
-	for (int n = 0; n < dim_x; ++n) {
-		const int C_idx = M * (dim_x * blockIdx.x + n) + blockIdx.y * C_blockDim_row + C_thread_row;
-		C[C_idx] = alpha * Cval[n] + beta * C[C_idx];
+	if (C_row_loc < M) {
+		for (int n = 0; n < dim_x; ++n) {
+			if (blockDim.x * blockIdx.x + n < N) {
+				const int C_idx = M * (dim_x * blockIdx.x + n) + blockIdx.y * C_blockDim_row + C_thread_row;
+				C[C_idx] = alpha * Cval[n] + beta * C[C_idx];
+			}
+		}
 	}
 }
 
