@@ -287,18 +287,14 @@ void BenchmarkGEMM() {
 
     std::cout << std::endl << "Entering GEMM Benchmarking mode! Stand by." 
         << std::endl;
-        
-    int M = 16, N = 64, K = 4;
-    std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM(M, N, K);
 
-    M = 32, N = 128, K = 32;
+
+    int M = 128, N = 128, K = 64;
     std::cout << std::endl << "Starting GEMM 5: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);
 
-    M = 120, N = 120, K = 30;
+    M = 120, N = 120, K = 31;
     std::cout << std::endl << "Starting GEMM 7: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
     TestGEMM(M, N, K);

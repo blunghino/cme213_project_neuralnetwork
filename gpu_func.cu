@@ -362,7 +362,7 @@ void myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, doub
 // Routine to perform a GEMM operation TRANSPOSING B,
 // A = M x K, B = N x K, C = M x N, D = M x N
 // not in place, D := alpha * A * B.T + beta*C 
-int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D, 
+int shared_myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D, 
 						double alpha, double beta, int M, int N, int K){
 
 	// A, B, C are already memcopied to device ie we already have device pointers
@@ -464,7 +464,7 @@ void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 
 
 // Routine to perform a GEMM operation, not in place, i.e., D := alpha*A*B + beta*C 
-int myGEMM_no_overwrite(double* A, double* B, double* C, double* D, 
+int shared_myGEMM_no_overwrite(double* A, double* B, double* C, double* D, 
 						double alpha, double beta, int M, int N, int K){
 
 	// A, B, C are already memcopied to device ie we already have device pointers
@@ -701,42 +701,41 @@ int myGEMM_simple(double* A, double* B, double* C, double* alpha, double* beta, 
 
 template <int DIM_X, int DIM_Y>
 __global__
-void ferrari_GEMM(double* A, double* B, double*C, 
+void ferrari_GEMM(double* A, double* B, double* C, 
 				double alpha, double beta, int M, int N, int K) {
-
-	const int dim_x = blockDim.x;
-	const int dim_y = blockDim.y;
 
 	// array to write result
 	double Cval[DIM_X] = {0};
  
-	// indices into the C matrix (C_dim_y is 64 while dim_y is 4)
-	const int C_blockDim_row = dim_y * dim_x;
-	const int C_thread_row = threadIdx.y * dim_x + threadIdx.x;
-	const int C_row_loc = C_blockDim_row * blockIdx.y + C_thread_row;
+	// 0-63
+	const int C_threadIdx = threadIdx.y * DIM_X + threadIdx.x;
+
+	const int C_row = DIM_X * DIM_Y * blockIdx.y + C_threadIdx;
 
 	// 0 - K/4
-	for (int k = 0; k < (K + dim_y -1) / dim_y; ++k) {
+	for (int k = 0; k < (K + DIM_Y -1) / DIM_Y; ++k) {
 		// shared mem subarray of B
 		__shared__ double Bshared[DIM_Y][DIM_X];
 		// local sub array of A
 		double a[DIM_Y] = {0};
 
+		const int B_row = DIM_Y * k + threadIdx.y;
+		const int B_col = DIM_X * blockIdx.x + threadIdx.x;
 		// each thread copies one value into Bshared
-		if (dim_y * k + threadIdx.y < K && dim_x * blockIdx.x + threadIdx.x < N) {
-			Bshared[threadIdx.y][threadIdx.x] = B[K * (dim_x * blockIdx.x + threadIdx.x) + dim_y * k + threadIdx.y];
+		if (B_row < K && B_col < N) {
+			Bshared[threadIdx.y][threadIdx.x] = B[K * B_col + B_row];
 		}
 		else {
 			Bshared[threadIdx.y][threadIdx.x] = 0;
 		}
 
 		// each thread copies 4 values into its local a
-		if (C_row_loc < M) {
-
+		if (C_row < M) {
 			#pragma unroll
 			for (int i = 0; i < DIM_Y; ++i) {
-				if (dim_y * k + i < K) {
-					a[i] = A[M * (dim_y * k + i) + blockIdx.y * C_blockDim_row + C_thread_row];
+				const int A_col = DIM_Y * k + i;
+				if (A_col < K) {
+					a[i] = A[M * A_col + C_row];
 				}
 			}
 		}
@@ -751,19 +750,20 @@ void ferrari_GEMM(double* A, double* B, double*C,
 		__syncthreads();
 	}
 
-	if (C_row_loc < M) {
+	if (C_row < M) {
 
 		#pragma unroll
 		for (int n = 0; n < DIM_X; ++n) {
-			if (dim_x * blockIdx.x + n < N) {
-				const int C_idx = M * (dim_x * blockIdx.x + n) + blockIdx.y * C_blockDim_row + C_thread_row;
+			const int C_col = DIM_X * blockIdx.x + n;
+			if (C_col < N) {
+				const int C_idx = M * C_col + C_row;
 				C[C_idx] = alpha * Cval[n] + beta * C[C_idx];
 			}
 		}
 	}
 }
 
-int myGEMM_ferrari(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
 
 	const int threads_x = 16;
 	const int threads_y = 4;
@@ -775,7 +775,7 @@ int myGEMM_ferrari(double* A, double* B, double* C, double* alpha, double* beta,
 	dim3 blocks(blocks_x, blocks_y);
 	dim3 threads(threads_x, threads_y);
 
-	bmw_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
+	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, *alpha, *beta, M, N, K);
 
 	check_launch("ferrari_GEMM");
@@ -852,7 +852,7 @@ void bmw_GEMM(double* A, double* B, double*C,
 
 }
 
-int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+int myGEMM_bmw(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
 
 	const int threads_x = 4;
 	const int threads_y = 16;
@@ -864,10 +864,183 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	dim3 blocks(blocks_x, blocks_y);
 	dim3 threads(threads_x, threads_y);
 
-	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
+	bmw_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, *alpha, *beta, M, N, K);
 
 	check_launch("bmw_GEMM");
+
+	return 0;
+}
+
+
+template <int DIM_X, int DIM_Y>
+__global__
+void ferrari_GEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
+										double alpha, double beta, int M, int N, int K) {
+
+	// array to write result
+	double Cval[DIM_X] = {0};
+ 
+	// 0-63
+	const int C_threadIdx = threadIdx.y * DIM_X + threadIdx.x;
+
+	const int C_row = DIM_X * DIM_Y * blockIdx.y + C_threadIdx;
+	
+	const int B_col = DIM_X * blockIdx.x + threadIdx.x;
+
+	// 0 - K/4
+	for (int k = 0; k < (K + DIM_Y -1) / DIM_Y; ++k) {
+		// shared mem subarray of B
+		__shared__ double Bshared[DIM_Y][DIM_X];
+		// local sub array of A
+		double a[DIM_Y] = {0};
+
+		const int B_row = DIM_Y * k + threadIdx.y;
+		// each thread copies one value into Bshared
+		if (B_row < K && B_col < N) {
+			Bshared[threadIdx.y][threadIdx.x] = B[K * B_col + B_row];
+		}
+		else {
+			Bshared[threadIdx.y][threadIdx.x] = 0;
+		}
+
+		// each thread copies 4 values into its local a
+		if (C_row < M) {
+			#pragma unroll
+			for (int i = 0; i < DIM_Y; ++i) {
+				const int A_col = DIM_Y * k + i;
+				if (A_col < K) {
+					a[i] = A[M * A_col + C_row];
+				}
+			}
+		}
+
+		__syncthreads();
+
+		#pragma unroll
+		for (int n = 0; n < DIM_X; ++n) {
+			Cval[n] += a[0]*Bshared[0][n] + a[1]*Bshared[1][n] + a[2]*Bshared[2][n] + a[3]*Bshared[3][n];
+		}
+
+		__syncthreads();
+	}
+
+	if (C_row < M) {
+
+		#pragma unroll
+		for (int n = 0; n < DIM_X; ++n) {
+			const int C_col = DIM_X * blockIdx.x + n;
+			if (C_col < N) {
+				const int C_idx = M * C_col + C_row;
+				D[C_idx] = alpha * Cval[n] + beta * C[C_idx];
+			}
+		}
+	}
+}
+
+int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
+							 double alpha, double beta, int M, int N, int K) {
+
+	const int threads_x = 16;
+	const int threads_y = 4;
+	const int C_blockDim_y = threads_x * threads_y;
+
+	int blocks_y = (M + C_blockDim_y -1) / C_blockDim_y;
+	int blocks_x = (N + threads_x -1) / threads_x;
+
+	dim3 blocks(blocks_x, blocks_y);
+	dim3 threads(threads_x, threads_y);
+
+	ferrari_GEMM_no_overwrite_kernel <threads_x, threads_y> <<<blocks, threads>>> 
+		(A, B, C, D, alpha, beta, M, N, K);
+
+	check_launch("ferrari_GEMM_no_overwrite_kernel");
+
+	return 0;
+}
+
+template <int DIM_X, int DIM_Y>
+__global__
+void ferrari_GEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, double* D,
+												double alpha, double beta, int M, int N, int K) {
+
+	// array to write result
+	double Cval[DIM_Y] = {0};
+ 
+	// 0-63
+	const int C_threadIdx = threadIdx.x * DIM_Y + threadIdx.y;
+
+	const int C_row = DIM_X * DIM_Y * blockIdx.y + C_threadIdx;
+	
+	const int B_row = DIM_Y * blockIdx.y + threadIdx.y;
+
+	// 0 - K/4
+	for (int k = 0; k < (K + DIM_X -1) / DIM_X; ++k) {
+		// shared mem subarray of B
+		__shared__ double Bshared[DIM_Y][DIM_X];
+		// local sub array of A
+		double a[DIM_X] = {0};
+
+		const int B_col = DIM_X * k + threadIdx.x;
+		// each thread copies one value into Bshared
+		if (B_row < N && B_col < K) {
+			Bshared[threadIdx.y][threadIdx.x] = B[N * B_col + B_row];
+		}
+		else {
+			Bshared[threadIdx.y][threadIdx.x] = 0;
+		}
+
+		// each thread copies 4 values into its local a
+		if (C_row < M) {
+			#pragma unroll
+			for (int i = 0; i < DIM_X; ++i) {
+				const int A_col = DIM_X * k + i;
+				if (A_col < K) {
+					a[i] = A[M * A_col + C_row];
+				}
+			}
+		}
+
+		__syncthreads();
+
+		#pragma unroll
+		for (int n = 0; n < DIM_Y; ++n) {
+			Cval[n] += a[0]*Bshared[n][0] + a[1]*Bshared[n][1] + a[2]*Bshared[n][2] + a[3]*Bshared[n][3];
+		}
+
+		__syncthreads();
+	}
+
+	if (C_row < M) {
+
+		#pragma unroll
+		for (int n = 0; n < DIM_Y; ++n) {
+			const int C_col = DIM_Y * blockIdx.x + n;
+			if (C_col < N) {
+				const int C_idx = M * C_col + C_row;
+				D[C_idx] = alpha * Cval[n] + beta * C[C_idx];
+			}
+		}
+	}
+}
+
+int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
+							 double alpha, double beta, int M, int N, int K) {
+
+	const int threads_x = 4;
+	const int threads_y = 16;
+	const int C_blockDim_y = threads_x * threads_y;
+
+	int blocks_y = (M + C_blockDim_y -1) / C_blockDim_y;
+	int blocks_x = (N + threads_y -1) / threads_y;
+
+	dim3 blocks(blocks_x, blocks_y);
+	dim3 threads(threads_x, threads_y);
+
+	ferrari_GEMM_no_overwrite_kernel <threads_x, threads_y> <<<blocks, threads>>> 
+		(A, B, C, D, alpha, beta, M, N, K);
+
+	check_launch("ferrari_GEMM_no_overwrite_transposeB_kernel");
 
 	return 0;
 }
