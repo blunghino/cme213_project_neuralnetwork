@@ -701,7 +701,7 @@ int myGEMM_simple(double* A, double* B, double* C, double* alpha, double* beta, 
 
 template <int DIM_X, int DIM_Y>
 __global__
-void bmw_GEMM(double* A, double* B, double*C, 
+void ferrari_GEMM(double* A, double* B, double*C, 
 				double alpha, double beta, int M, int N, int K) {
 
 	const int dim_x = blockDim.x;
@@ -763,7 +763,7 @@ void bmw_GEMM(double* A, double* B, double*C,
 	}
 }
 
-int myGEMM_bmw(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
+int myGEMM_ferrari(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
 
 	const int threads_x = 16;
 	const int threads_y = 4;
@@ -778,20 +778,20 @@ int myGEMM_bmw(double* A, double* B, double* C, double* alpha, double* beta, int
 	bmw_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, *alpha, *beta, M, N, K);
 
-	check_launch("bmw_GEMM");
+	check_launch("ferrari_GEMM");
 
 	return 0;
 }
 
 template <int DIM_X, int DIM_Y>
 __global__
-void ferrari_GEMM(double* A, double* B, double*C, 
+void bmw_GEMM(double* A, double* B, double*C, 
 				double alpha, double beta, int M, int N, int K) {
 	// Array to store result
 	double Cval[DIM_Y] = {0};
 
 	// 0-63
-    const int C_threadIdx_x = threadIdx.x * DIM_Y + threadIdx.x;
+    const int C_threadIdx_x = threadIdx.y * DIM_X + threadIdx.x;
     // less than N if in bounds
     const int C_col = DIM_X * DIM_Y * blockIdx.x + C_threadIdx_x;
     // less than M if in bounds
@@ -867,7 +867,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, *alpha, *beta, M, N, K);
 
-	check_launch("ferrari_GEMM");
+	check_launch("bmw_GEMM");
 
 	return 0;
 }
