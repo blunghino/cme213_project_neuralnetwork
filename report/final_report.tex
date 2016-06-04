@@ -45,13 +45,15 @@
 
 \section{Summary}
 
-In this report I analyze the performance and correctness of my neural network. My final network is the result of 4 iterations of profiling and performance improvements. In each section of the report I describe the features of my implementation, identify performance bottlenecks, and discuss strategies for improving performance.
+In this report I analyze the performance and correctness of my neural network. My final network is the result of 4 iterations of profiling and performance improvements. In each section of the report I describe the features of my implementation, identify performance bottlenecks, and discuss strategies for improving performance. Results from the 4 implementations are presented in Table~.
+
+
 
 \section{Implementation 1}
 
 My first correct implementation laid a sound foundation to build on. This implementation established the pattern of communication between MPI nodes and between CPU and GPU. For each batch the training set data is divided among MPI nodes. On each node the training data and the current set of network coefficients is copied to the GPU at the beginning of the feed-forward process. The data remains on the GEMM kernels for all feed-forward and backpropagation steps. The computed gradients are then copied back to the CPU on each MPI node. The gradients are summed on each MPI node and then used to update the network coefficients, so each MPI node has an identical set of network coefficients. The structure of communications described above is fast because it minimizes the amount of data transferred between CPU and GPU using cudaMemcpy and also minimizes the amount of data transferred between MPI nodes .
 
-This implementation uses very simple GEMM kernels, with each entry in the result matrix being computed by an indvidual thread and each thread loading all data needed for the calculation from global memory. Profiling the implementation unsurprisingly shows that 99\% of the compute time is spent in the GEMM kernels (Figure~\ref{fig:screenshot1}). The GEMM kernels are slow because each thread is performing many uncoalesced reads from global memory. A first step to reducing compute time would be to leverage shared memory to reduce reads from global memory.
+This implementation uses very simple GEMM kernels, with each entry in the result matrix being computed by an indvidual thread and each thread loading all data needed for the calculation from global memory. Profiling the implementation unsurprisingly shows that 99\% of the compute time is spent in the GEMM kernels (Figure~\ref{fig:screenshot1}). The GEMM kernels are slow because they are heavily memory bound, each thread is performing many uncoalesced reads from global memory. My first step to reducing compute time was to leverage shared memory to reduce reads from global memory.
 
 \begin{figure}[htb]
 	\begin{center}
@@ -60,6 +62,8 @@ This implementation uses very simple GEMM kernels, with each entry in the result
 		\label{fig:screenshot1}
 	\end{center}
 \end{figure}
+
+
 
 \section{Implementation 2}
 

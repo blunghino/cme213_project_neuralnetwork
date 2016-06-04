@@ -972,7 +972,7 @@ void ferrari_GEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C
 
 	const int C_row = DIM_X * DIM_Y * blockIdx.y + C_threadIdx;
 	
-	const int B_row = DIM_Y * blockIdx.y + threadIdx.y;
+	const int B_row = DIM_Y * blockIdx.x + threadIdx.y;
 
 	// 0 - K/4
 	for (int k = 0; k < (K + DIM_X -1) / DIM_X; ++k) {
@@ -1031,13 +1031,13 @@ int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
 	const int threads_y = 16;
 	const int C_blockDim_y = threads_x * threads_y;
 
-	int blocks_y = (M + C_blockDim_y -1) / C_blockDim_y;
 	int blocks_x = (N + threads_y -1) / threads_y;
+	int blocks_y = (M + C_blockDim_y -1) / C_blockDim_y;
 
 	dim3 blocks(blocks_x, blocks_y);
 	dim3 threads(threads_x, threads_y);
 
-	ferrari_GEMM_no_overwrite_kernel <threads_x, threads_y> <<<blocks, threads>>> 
+	ferrari_GEMM_no_overwrite_transposeB_kernel <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, D, alpha, beta, M, N, K);
 
 	check_launch("ferrari_GEMM_no_overwrite_transposeB_kernel");
