@@ -968,7 +968,7 @@ void ferrari_GEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C
 	double Cval[DIM_Y] = {0};
  
 	// 0-63
-	const int C_threadIdx = threadIdx.x * DIM_Y + threadIdx.y;
+	const int C_threadIdx = threadIdx.y * DIM_X + threadIdx.x;
 
 	const int C_row = DIM_X * DIM_Y * blockIdx.y + C_threadIdx;
 	
