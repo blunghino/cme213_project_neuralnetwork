@@ -63,7 +63,7 @@ int Dz1_schur_GPU(double* Da1, double* a1, double* Dz1, int M, int N) {
 
 	Dz1_schur_kernel<<<blocks, threads>>> (Da1, a1, Dz1, M, N);
 
-	check_launch("Dz1_schur_kernel");
+	// check_launch("Dz1_schur_kernel");
 
 	return 0;
 }
@@ -130,7 +130,7 @@ int sigmoid_GPU(double* z1, double* a1, int M, int N) {
 
 	sigmoid_kernel<<<blocks, threads>>> (z1, a1, M, N);
 
-	check_launch("sigmoid_kernel");
+	// check_launch("sigmoid_kernel");
 
 	return 0;
 }
@@ -170,7 +170,7 @@ int softmax_GPU(double* z2, double* a2, double* y, int M, int N, int scale) {
 
     softmax_kernel<<<N, M>>> (z2, a2, y, M, N, scale);
 
-    check_launch("softmax_kernel");
+    // check_launch("softmax_kernel");
 
     return 0;
 }
@@ -778,7 +778,7 @@ int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, 
 	ferrari_GEMM <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, *alpha, *beta, M, N, K);
 
-	check_launch("ferrari_GEMM");
+	// check_launch("ferrari_GEMM");
 
 	return 0;
 }
@@ -954,7 +954,7 @@ int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
 	ferrari_GEMM_no_overwrite_kernel <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, D, alpha, beta, M, N, K);
 
-	check_launch("ferrari_GEMM_no_overwrite_kernel");
+	// check_launch("ferrari_GEMM_no_overwrite_kernel");
 
 	return 0;
 }
@@ -1040,7 +1040,7 @@ int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
 	ferrari_GEMM_no_overwrite_transposeB_kernel <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, D, alpha, beta, M, N, K);
 
-	check_launch("ferrari_GEMM_no_overwrite_transposeB_kernel");
+	// check_launch("ferrari_GEMM_no_overwrite_transposeB_kernel");
 
 	return 0;
 }
@@ -1129,7 +1129,7 @@ int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C,
 	ferrari_GEMM_no_overwrite_no_add_transposeA_kernel <threads_x, threads_y> <<<blocks, threads>>> 
 		(A, B, C, alpha, M, N, K);
 
-	check_launch("ferrari_GEMM_no_overwrite_no_add_transposeA_kernel");
+	// check_launch("ferrari_GEMM_no_overwrite_no_add_transposeA_kernel");
 
 	return 0;
 }
