@@ -222,7 +222,7 @@ int main(int argc, char* argv[]) {
 
     if (grade == 9) {
         if(rank == 0) {
-            BenchmarkGEMM_no_tB();
+            BenchmarkGEMM_no_overwrite_no_add_transposeA();
         }
 
         MPI_Finalize();

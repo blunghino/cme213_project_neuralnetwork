@@ -140,6 +140,36 @@ void createMATS_transposeB(double *A, double *B, double *C1, double *C2, double*
     }
 }
 
+void createMATS_transposeA(double *A, double *B, double* A_t, double*C1, int NI, int NJ, int NK)
+{
+    int i, j;
+
+    for (j = 0; j < NK; j++)
+    {
+        for (i = 0; i < NI; i++)
+        {
+            A[i + j*NI] = ((double) i*j) / NI;
+            A_t[j + i*NK] = ((double) i*j) / NI;
+        }
+    }
+
+    for (j = 0; j < NJ; j++)
+    {
+        for (i = 0; i < NK; i++)
+        {
+            B[i + j*NK] = ((double) i*j + 1) / NJ;
+        }
+    }
+
+    for (j = 0; j < NJ; j++)
+    {
+        for (i = 0; i < NI; i++)
+        {
+            C1[i + j*NI] = 0;
+        }
+    }
+}
+
 int compareGEMMResults(double* myC, double* refC, int NI, int NJ)
 {
     int i, j;
@@ -678,52 +708,47 @@ void test_sigmoid_GPU() {
     std::cout << "Completed test_sigmoid_GPU" << std::endl;
 }
 
-void TestGEMM_no_tB(int M, int N, int K) {
+void TestGEMM_no_overwrite_no_add_transposeA(int M, int N, int K) {
     
     int num_itrs = 1;
 
     double *A;
     double *B;
-    double *B_t;
+    double *A_t;
     double *C1;
     double *C2;
-    double *D1;
 
     double *dA;
     double *dB;
-    double* dB_t;
+    double* dA_t;
     double *dC1;
     double *dC2;
-    double *dD1;
     double *dummy;
     double *dummy2;
 
     double alpha = 2.0;
-    double beta = 5.0;
+    double beta = 0;
 
     A = (double *)malloc(M*K*sizeof(double)); 
     B = (double *)malloc(K*N*sizeof(double));
-    B_t = (double*)malloc(N*K*sizeof(double));
+    A_t = (double*)malloc(K*M*sizeof(double));
     C1 = (double *)malloc(M*N*sizeof(double)); 
     C2 = (double *)malloc(M*N*sizeof(double));
-    D1 = (double *)malloc(M*N*sizeof(double));
 
     cudaMalloc((void **)&dA, sizeof(double) * M * K);
     cudaMalloc((void **)&dB, sizeof(double) * K * N);
-    cudaMalloc((void**)&dB_t, sizeof(double) * N * K);
+    cudaMalloc((void**)&dA_t, sizeof(double) * M * K);
     cudaMalloc((void **)&dC1, sizeof(double) * M * N);
     cudaMalloc((void **)&dC2, sizeof(double) * M * N);
-    cudaMalloc((void **)&dD1, sizeof(double) * M * N);
     cudaMalloc((void **)&dummy, sizeof(double) * M * N);
     cudaMalloc((void **)&dummy2, sizeof(double) * M * N);
 
     // C1 and C2 are same. We just have two copies to compare results
-    createMATS_transposeB(A, B, C1, C2, B_t, M, N, K);
+    createMATS_transposeA(A, B, A_t, C2, M, N, K);
 
     cudaMemcpy(dA, A, sizeof(double) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(dB, B, sizeof(double) * K * N, cudaMemcpyHostToDevice);
-    cudaMemcpy(dB_t, B_t, sizeof(double) * N * K, cudaMemcpyHostToDevice);
-    cudaMemcpy(dC1, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
+    cudaMemcpy(dA_t, A_t, sizeof(double) * M * K, cudaMemcpyHostToDevice);
     cudaMemcpy(dC2, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
     cudaMemcpy(dummy, C2, sizeof(double) * M * N, cudaMemcpyHostToDevice);
 
@@ -769,18 +794,17 @@ void TestGEMM_no_tB(int M, int N, int K) {
 
     /* We are calling your GEMM function here */
     int err;
-    err = myGEMM_no_tB(dA, dB_t, dummy, dummy2, alpha, beta, M, N, K);
+    err = shared_myGEMM_no_overwrite_no_add_transposeA(dA_t, dB, dummy2, alpha, M, N, K);
     check_launch("My GEMM dummy");
 
     double mystart = MPI_Wtime();
     for(int i = 0; i < num_itrs; i++) {
-        err = myGEMM_no_tB(dA, dB_t, dC1, dD1, alpha, beta, M, N, K);
-        // err = myGEMM(dA, dB, dC1, &alpha, &beta, M, N, K);
+        err = shared_myGEMM_no_overwrite_no_add_transposeA(dA_t, dB, dC1, alpha, M, N, K);
     }
     double myend = MPI_Wtime();
 
     /* This is to check for cuda error status */
-    check_launch("myGEMM_no_overwrite");
+    check_launch("myGEMM_no_overwrite_no_add_transposeA");
 
     /* This error code is for your own debugging, it does not catch
        illegal memory accesses or bad kernel launches */
@@ -788,10 +812,10 @@ void TestGEMM_no_tB(int M, int N, int K) {
         std::cout << "Error in my GEMM. Error code: " << err << std::endl;
     }
 
-    cudaMemcpy(D1, dD1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(C1, dC1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
     // cudaMemcpy(D1, dC1, sizeof(double) * M * N, cudaMemcpyDeviceToHost);
 
-    int fail = compareGEMMResults(D1, C2, M, N);
+    int fail = compareGEMMResults(C1, C2, M, N);
     if (fail == 0) {       
         std::cout << "Time for reference GEMM implementation: " 
             << refend - refstart << std::endl;
@@ -801,21 +825,21 @@ void TestGEMM_no_tB(int M, int N, int K) {
 
     free(A); 
     free(B); 
-    free(B_t);
+    free(A_t);
     free(C1); 
     free(C2);
-    free(D1);
     cudaFree(dA); 
     cudaFree(dB); 
-    cudaFree(dB_t);
+    cudaFree(dA_t);
     cudaFree(dC1); 
     cudaFree(dC2); 
-    cudaFree(dD1);
+    cudaFree(dummy);
+    cudaFree(dummy2);
 }
 
-void BenchmarkGEMM_no_tB() {
+void BenchmarkGEMM_no_overwrite_no_add_transposeA() {
 
-    std::cout << std::endl << "BenchmarkGEMM_no_overwrite_transposeB" 
+    std::cout << std::endl << "BenchmarkGEMM_no_overwrite_no_add_transposeA" 
         << std::endl;
 
     /* First GEMM Problem Size */
@@ -823,17 +847,17 @@ void BenchmarkGEMM_no_tB() {
 
     std::cout << std::endl << "Starting GEMM: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
-    TestGEMM_no_tB(M, N, K);
+    TestGEMM_no_overwrite_no_add_transposeA(M, N, K);
 
     std::cout << "Completed GEMM 1" << std::endl;
 
     M = 100, N = 800, K = 784;
     std::cout << std::endl << "Starting GEMM 3: " << "M = " << M << "; N = " 
         << N << "; K = " << K << std::endl;
-    TestGEMM_no_tB(M, N, K);
+    TestGEMM_no_overwrite_no_add_transposeA(M, N, K);
 
-    M = 10, N = 800, K = 100;
-    std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
-        << N << "; K = " << K << std::endl;
-    TestGEMM_no_tB(M, N, K);
+    // M = 10, N = 800, K = 100;
+    // std::cout << std::endl << "Starting GEMM 4: " << "M = " << M << "; N = " 
+    //     << N << "; K = " << K << std::endl;
+    // TestGEMM_no_tB(M, N, K);
 }

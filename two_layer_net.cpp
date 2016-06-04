@@ -369,11 +369,11 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // BACKPROP steps to calc dW0-1 and db0-1 all on device
   // DW1 = CE * a1.T + reg * W1 where CE = "diff"
-  shared_myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
+  myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
 
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 
-  shared_myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
+  myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
 
   // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
   Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images); 

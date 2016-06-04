@@ -1044,3 +1044,92 @@ int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
 
 	return 0;
 }
+
+template <int DIM_X, int DIM_Y>
+__global__
+void ferrari_GEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* C,
+										double alpha, int M, int N, int K) {
+
+	// array to write result
+	double Cval[DIM_X] = {0};
+ 
+	// 0-63
+	const int C_threadIdx = threadIdx.y * DIM_X + threadIdx.x;
+
+	const int C_row = DIM_X * DIM_Y * blockIdx.y + C_threadIdx;
+	
+	const int B_col = DIM_X * blockIdx.x + threadIdx.x;
+
+	// transpose
+	const int A_col = C_row;
+
+	// 0 - K/4
+	for (int k = 0; k < (K + DIM_Y -1) / DIM_Y; ++k) {
+		// shared mem subarray of B
+		__shared__ double Bshared[DIM_Y][DIM_X];
+		// local sub array of A
+		double a[DIM_Y] = {0};
+
+		const int B_row = DIM_Y * k + threadIdx.y;
+		// each thread copies one value into Bshared
+		if (B_row < K && B_col < N) {
+			Bshared[threadIdx.y][threadIdx.x] = B[K * B_col + B_row];
+		}
+		else {
+			Bshared[threadIdx.y][threadIdx.x] = 0;
+		}
+
+		// each thread copies 4 values into its local a
+		if (A_col < M) {
+			#pragma unroll
+			for (int i = 0; i < DIM_Y; ++i) {
+				const int A_row = DIM_Y * k + i;
+				if (A_row < K) {
+					a[i] = A[K * A_col + A_row];
+				}
+			}
+		}
+
+		__syncthreads();
+
+		#pragma unroll
+		for (int n = 0; n < DIM_X; ++n) {
+			Cval[n] += a[0]*Bshared[0][n] + a[1]*Bshared[1][n] + a[2]*Bshared[2][n] + a[3]*Bshared[3][n];
+		}
+
+		__syncthreads();
+	}
+
+	if (C_row < M) {
+
+		#pragma unroll
+		for (int n = 0; n < DIM_X; ++n) {
+			const int C_col = DIM_X * blockIdx.x + n;
+			if (C_col < N) {
+				const int C_idx = M * C_col + C_row;
+				C[C_idx] = alpha * Cval[n];
+			}
+		}
+	}
+}
+
+int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
+							 			 double alpha, int M, int N, int K) {
+
+	const int threads_x = 16;
+	const int threads_y = 4;
+	const int C_blockDim_y = threads_x * threads_y;
+
+	int blocks_y = (M + C_blockDim_y -1) / C_blockDim_y;
+	int blocks_x = (N + threads_x -1) / threads_x;
+
+	dim3 blocks(blocks_x, blocks_y);
+	dim3 threads(threads_x, threads_y);
+
+	ferrari_GEMM_no_overwrite_no_add_transposeA_kernel <threads_x, threads_y> <<<blocks, threads>>> 
+		(A, B, C, alpha, M, N, K);
+
+	check_launch("ferrari_GEMM_no_overwrite_no_add_transposeA_kernel");
+
+	return 0;
+}
