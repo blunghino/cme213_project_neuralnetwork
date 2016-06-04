@@ -353,79 +353,34 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   checkCudaErrors(cudaMemcpy(d_b0, b0, b0_size * sizeof(double), cudaMemcpyHostToDevice));
   checkCudaErrors(cudaMemcpy(d_b1, b1, y_size * sizeof(double), cudaMemcpyHostToDevice));
 
-  // feedforward steps to calc a1, a2, z1, z2 all on device
+  // FEED-FORWARD steps to calc a1, a2, z1, z2 all on device
   // z1.T = W0 * X.T + b0.T
   myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, 1, 1, n_1, n_images, n_0);
-
-  // arma::mat z1_t = arma::mat(n_1, n_images);
-  // cudaMemcpy(z1_t.memptr(), d_z1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
   
   // a1.T = sigmoid(z1.T)
   sigmoid_GPU(d_z1, d_a1, n_1, n_images);
 
-  // arma::mat a1_t = arma::mat(n_1, n_images);
-  // cudaMemcpy(a1_t.memptr(), d_a1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
-
   // z2.T = W1 * a1.T + b1.T
   myGEMM_no_overwrite(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
-
-  // arma::mat z2_t = arma::mat(n_2, n_images);
-  // cudaMemcpy(z2_t.memptr(), d_z2, sizeof(double)*y_size, cudaMemcpyDeviceToHost);
 
   // a2.T = (softmax(z2.T) - y) / n_images
   // a2.T now holds the CROSS ENTROPY
   softmax_GPU(d_z2, d_a2, d_y, n_2, n_images, batch_size);
 
-  // arma::mat a2_t = arma::mat(n_2, n_images);
-  // cudaMemcpy(a2_t.memptr(), d_a2, sizeof(double)*y_size, cudaMemcpyDeviceToHost);
-
-  // backprop steps to calc dW0-1 and db0-1 all on device
+  // BACKPROP steps to calc dW0-1 and db0-1 all on device
   // DW1 = CE * a1.T + reg * W1 where CE = "diff"
-  myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
-
-  // arma::mat DW1_mat = arma::mat(n_2, n_1);
-  // cudaMemcpy(DW1_mat.memptr(), d_DW1, sizeof(double)*W1_size, cudaMemcpyDeviceToHost);
-
-  // arma::mat W1_mat(W1, n_2, n_1, true);
+  shared_myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
 
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 
-  myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
-
-  // arma::mat Da1_t_mat = arma::mat(n_1, n_images);
-  // cudaMemcpy(Da1_t_mat.memptr(), d_Da1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
+  shared_myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
 
   // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
-  Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images);
-
-  // arma::mat Dz1_t_mat = arma::mat(n_1, n_images);
-  // cudaMemcpy(Dz1_t_mat.memptr(), d_Dz1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
-
-  // arma::mat diff_Dz1_t = g_Dz1_t - Dz1_t_mat;
-  // std::cout << "\ndiff Dz1_t " <<  std::endl; 
+  Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images); 
 
   // DW0.T = Dz1.T * X.T + reg * W0
   myGEMM_no_overwrite_transposeB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
   // Db0.T = Dz1.T ... do nothing
-
-  // arma::mat X_t_mat = arma::mat(n_0, n_images);
-  // cudaMemcpy(X_t_mat.memptr(), d_X, sizeof(double)*X_size, cudaMemcpyDeviceToHost);
-  // arma::mat W0_mat = arma::mat(n_1, n_0);
-  // cudaMemcpy(W0_mat.memptr(), d_W0, sizeof(double)*W0_size, cudaMemcpyDeviceToHost);
-
-  // arma::mat DW0_mat = arma::mat(n_1, n_0);
-  // cudaMemcpy(DW0_mat.memptr(), d_DW0, sizeof(double)*W0_size, cudaMemcpyDeviceToHost);
-
-  // arma::mat diff_DW0 = g_DW0 - DW0_mat;
-  // std::cout << "\n GPU diff DW0" << std::endl;
-
-  // arma::mat Db0_t_mat = arma::mat(n_1, n_images);
-  // cudaMemcpy(Db0_t_mat.memptr(), d_Dz1, sizeof(double)*b0_size, cudaMemcpyDeviceToHost);
-  // arma::mat Db0_vec = arma::sum(Db0_t_mat, 1);
-  // arma::mat diff_Db0_vec = g_Db0 - Db0_vec.t();
-  // std::cout << "\n GPU diff Db0" << std::endl;
-  // std::cout << diff_Db0_vec << std::endl;
-
 
   // memcpy
   checkCudaErrors(cudaMemcpy(DW0, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));

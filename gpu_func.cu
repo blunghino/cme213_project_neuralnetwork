@@ -178,7 +178,7 @@ int softmax_GPU(double* z2, double* a2, double* y, int M, int N, int scale) {
 // Kernel function called by my GEMM no overwrite - alpha * A * B = C
 template <int side>
 __global__
-void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* C,
+void shared_myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* C,
 				                				  double alpha, int M, int N, int K) {
 	// side is BLOCK_SIZE
 	// M is C.stride
@@ -256,7 +256,7 @@ void myGEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, double* 
 
 // Routine to perform a GEMM operation without addition, transposing A
 //  not in place, i.e., D := alpha*A.T*B
-int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
+int shared_myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
 										  double alpha, int M, int N, int K){
 
 	// A, B are already memcopied to device ie we already have device pointers
@@ -273,10 +273,10 @@ int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C,
 	dim3 blocks_per_grid(block_x, block_y);
 
 	// set up streams ??
-	myGEMM_no_overwrite_no_add_transposeA_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
+	shared_myGEMM_no_overwrite_no_add_transposeA_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
 		(A, B, C, alpha, M, N, K);
 
-	check_launch("myGEMM_no_overwrite_no_add_transposeA");
+	check_launch("shared_myGEMM_no_overwrite_no_add_transposeA");
 
 	return 0;
 }
@@ -285,7 +285,7 @@ int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C,
 // TRANSPOSING B to acheive matrix multiply dimensions
 template <int side>
 __global__
-void myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, double* D,
+void shared_myGEMM_no_overwrite_transposeB_kernel(double* A, double* B, double* C, double* D,
 				                double alpha, double beta, int M, int N, int K) {
 	// side is BLOCK_SIZE
 	// M is C.stride
@@ -379,10 +379,10 @@ int shared_myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, doubl
 	dim3 blocks_per_grid(block_x, block_y);
 
 	// set up streams ??
-	myGEMM_no_overwrite_transposeB_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
+	shared_myGEMM_no_overwrite_transposeB_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
 		(A, B, C, D, alpha, beta, M, N, K);
 
-	check_launch("myGEMM_no_overwrite_transposeB_kernel");
+	check_launch("shared_myGEMM_no_overwrite_transposeB_kernel");
 
 	return 0;
 }
@@ -390,7 +390,7 @@ int shared_myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, doubl
 // Kernel function called by my GEMM no overwrite
 template <int side>
 __global__
-void myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
+void shared_myGEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D,
 				                double alpha, double beta, int M, int N, int K) {
 	// side is BLOCK_SIZE
 	// M is C.stride
@@ -481,10 +481,10 @@ int shared_myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
 	dim3 blocks_per_grid(block_x, block_y);
 
 	// set up streams ??
-	myGEMM_no_overwrite_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
+	shared_myGEMM_no_overwrite_kernel <side> <<<blocks_per_grid, threads_per_block>>> 
 		(A, B, C, D, alpha, beta, M, N, K);
 
-	check_launch("myGEMM_no_overwrite_kernel");
+	check_launch("shared_myGEMM_no_overwrite_kernel");
 
 	return 0;
 }
