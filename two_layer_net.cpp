@@ -361,7 +361,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
   sigmoid_GPU(d_z1, d_a1, n_1, n_images);
 
   // z2.T = W1 * a1.T + b1.T
-  myGEMM_no_overwrite(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
+  myGEMM_no(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
 
   // a2.T = (softmax(z2.T) - y) / n_images
   // a2.T now holds the CROSS ENTROPY
@@ -369,7 +369,7 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
 
   // BACKPROP steps to calc dW0-1 and db0-1 all on device
   // DW1 = CE * a1.T + reg * W1 where CE = "diff"
-  myGEMM_no_overwrite_transposeB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
+  myGEMM_no_tB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
 
   // Db1.T = a2.T ... do nothing
   // Da1.T = W1 * a2.T 

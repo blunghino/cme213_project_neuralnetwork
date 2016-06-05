@@ -2,6 +2,14 @@
 
 \usepackage{graphicx}
 
+% for tables
+\usepackage{tabularx, caption}
+
+% scientific notation, units
+\usepackage{siunitx}
+
+\usepackage{csvsimple}
+
 \usepackage[margin=0.75in]{geometry}
 
 % for \FloatBarrier to keep figs in sections
@@ -43,34 +51,77 @@
 	
 \maketitle
 
-\section{Summary}
+\section*{Summary}
 
-In this report I analyze the performance and correctness of my neural network. My final network is the result of 4 iterations of profiling and performance improvements. In each section of the report I describe the features of my implementation, identify performance bottlenecks, and discuss strategies for improving performance. Results from the 4 implementations are presented in Table~.
+In this report I analyze the performance and correctness of my neural network. My final network is the result of 4 iterations of profiling and performance improvements. In each section of the report I describe the features of my implementation, identify performance bottlenecks, and discuss strategies for improving performance. Results from the 4 implementations are presented in Table~\ref{tab:results}.
 
+\bigskip
+	\begin{minipage}{\linewidth}
+		\centering
+		\begin{tabular}{c|c|c|c}%
+			\bfseries Implementation & \bfseries Network Time [s] & \bfseries GEMM 1 Time [s] & \bfseries GEMM 2 Time [s]% specify table head
+			\csvreader[head to column names]{implementation_results.csv}{}% use head of csv as column names
+			{\\\hline\csvcoli&\csvcolii&\csvcoliii&\csvcoliv}% specify your coloumns here
+		\end{tabular}
+		\captionof{table}{Performance of different implementations.} \label{tab:results} 
+	\end{minipage}
 
+\section*{Implementation 1}
 
-\section{Implementation 1}
+My first correct implementation laid a sound foundation to build on. This implementation established the pattern of communication between MPI nodes and between CPU and GPU. For each batch the training set data is divided among MPI nodes. On each node the training data and the current set of network coefficients is copied to the GPU at the beginning of the feed-forward process. The data remains on the GEMM kernels for all feed-forward and backpropagation steps. The computed gradients are then copied back to the CPU on each MPI node. The gradients are summed on each MPI node and then used to update the network coefficients, so each MPI node has an identical set of network coefficients. The structure of communications described above is fast because it minimizes the amount of data transferred between CPU and GPU using cudaMemcpy and also minimizes the amount of data transferred between MPI nodes.
 
-My first correct implementation laid a sound foundation to build on. This implementation established the pattern of communication between MPI nodes and between CPU and GPU. For each batch the training set data is divided among MPI nodes. On each node the training data and the current set of network coefficients is copied to the GPU at the beginning of the feed-forward process. The data remains on the GEMM kernels for all feed-forward and backpropagation steps. The computed gradients are then copied back to the CPU on each MPI node. The gradients are summed on each MPI node and then used to update the network coefficients, so each MPI node has an identical set of network coefficients. The structure of communications described above is fast because it minimizes the amount of data transferred between CPU and GPU using cudaMemcpy and also minimizes the amount of data transferred between MPI nodes .
-
-This implementation uses very simple GEMM kernels, with each entry in the result matrix being computed by an indvidual thread and each thread loading all data needed for the calculation from global memory. Profiling the implementation unsurprisingly shows that 99\% of the compute time is spent in the GEMM kernels (Figure~\ref{fig:screenshot1}). The GEMM kernels are slow because they are heavily memory bound, each thread is performing many uncoalesced reads from global memory. My first step to reducing compute time was to leverage shared memory to reduce reads from global memory.
+This implementation uses very simple GEMM kernels, with each entry in the result matrix being computed by an indvidual thread and each thread loading all data needed for the calculation from global memory. Profiling the implementation unsurprisingly shows that 99\% of the compute time is spent in the GEMM kernels. The GEMM kernels are slow because they are heavily memory bound (Figure~\ref{fig:mem_bnd_1}), each thread is performing many uncoalesced reads from global memory. My first step to reducing compute time was to leverage shared memory to reduce reads from global memory.
 
 \begin{figure}[htb]
 	\begin{center}
-		\includegraphics[width=\linewidth]{fig/screenshot1.png}
-		\caption{NVVP visualization of run chonology for Implementation 1.}
-		\label{fig:screenshot1}
+		\includegraphics[width=\linewidth]{fig/memory_bound_9a3cb5a.png}
+		\caption{NVVP visualization of memory bound GEMM kernel for Implementation 1.}
+		\label{fig:mem_bnd_1}
 	\end{center}
 \end{figure}
 
 
+\section*{Implementation 2}
 
-\section{Implementation 2}
+This implementation features an improved GEMM kernel that loads square blocks of data from the input matrices into shared memory. Each thread still computes a single value in the result matrix. The data in shared memory is used by a thread block to contribute to the result for 256 threads. Unfortunately the GEMM kernels still account for approximately 98\% of the compute time. Analysis of the improved GEMM kernel shows that they are once again limited by memory reads, this time with the bandwidth of shared memory as the limiting factor (Figure~\ref{fig:mem_bnd_2}). This GEMM could therefore be improved by further increasing the amount of computation done with the data from each memory read.
 
-This implementation features an improved GEMM kernel that loads square blocks of data from the input matrices into shared memory. Each thread still computes a single value in the result matrix. The data in shared memory is used by a thread block to update the result in 
+\begin{figure}[htb]
+	\begin{center}
+		\includegraphics[width=\linewidth]{fig/memory_bound_ce0a10e.png}
+		\caption{NVVP visualization of memory bound GEMM kernel for Implementation 2.}
+		\label{fig:mem_bnd_2}
+	\end{center}
+\end{figure}
 
-\section{Correctness Analysis}
+\section*{Implementation 3}
 
-Round off errors increase with learning rate and 
+This implementation uses a kernel designed so that each thread computes 16 values in the result matrix. This improvement to the GEMM algorithm reduces total GEMM time by more than 50\% for the larger test case. The kernel is now being limited by new problems - specifically occupancy issues. The kernel is hitting the limit of the number of registers used per block, resulting in only 33\% occupancy being achieved (Figure~\ref{fig:occupancy_3}). Only 16 warps are active per streaming multiprocessor - far below the device limit of 48. The next step to improve the GEMM would be to reduce the number of registers used by each thread.
+
+This implementation HAS ANOTHER PROBLEM
+
+\begin{figure}[htb]
+	\begin{center}
+		\includegraphics[width=\linewidth]{fig/latency_bound_3072329.png}
+		\caption{NVVP visualization of latency limited GEMM kernel for Implementation 3.}
+		\label{fig:lat_bnd_3}
+	\end{center}
+\end{figure}
+
+\begin{figure}[htb]
+	\begin{center}
+		\includegraphics[width=\linewidth]{fig/occupancy_issues.png}
+		\caption{NVVP data table showing low occupancy for the GEMM kernel for Implementation 3.}
+		\label{fig:occupancy_3}
+	\end{center}
+\end{figure}
+
+%\section*{Implementation 4}
+
+
+
+\section*{Correctness Analysis}
+
+Errors between the CPU and GPU results range between $10^{-7}$ and $10^{-15}$ for the standard test cases. These errors are due to differences in floating point round off error between CPU and GPU. Round off errors increase with increased learning rate and with increased number of epochs. At higher learning rates the difference in gradients between CPU and GPU is amplified with each update of the network coefficients. A greater number of epochs causes accumulation of round off errors with each iteration.
+
 
 \end{document}
