@@ -312,8 +312,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
     const int epochs, const int batch_size, bool grad_check, int print_every, int debug)
 {
   int rank, num_procs;
-  MPI_SAFE_CALL (MPI_Comm_size (MPI_COMM_WORLD, &num_procs));
-  MPI_SAFE_CALL (MPI_Comm_rank (MPI_COMM_WORLD, &rank));
+  MPI_Comm_size (MPI_COMM_WORLD, &num_procs);
+  MPI_Comm_rank (MPI_COMM_WORLD, &rank);
   
   // TRANSPOSED
   arma::mat X_t = X.t();
@@ -321,7 +321,7 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   int N = (rank == 0) ? X.n_rows : 0;
 
   // broad cast
-  MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
+  MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
   std::ofstream error_file;
   error_file.open("Outputs/CpuGpuDiff.txt");
@@ -335,17 +335,6 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   int num_batches = (N + batch_size - 1) / batch_size;
   // dimensions
   int n_images = batch_size / num_procs;
-
-  arma::mat Db0;
-  arma::mat Db1;
-  arma::mat X_batch;
-  arma::mat y_batch;
-
-  // new matrices 
-  arma::mat Db0_t = arma::zeros(n_1, n_images);
-  arma::mat Db1_t = arma::zeros(n_2, n_images);
-  arma::mat DW0 = arma::zeros(n_1, n_0);
-  arma::mat DW1 = arma::zeros(n_2, n_1);
 
   // calc sizes
   int X_size = n_images * n_0; // 800 x 784
@@ -361,7 +350,15 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
   double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
   double* Db1_t_local = (double*) malloc(sizeof(double) * y_size);
-  
+
+  // new matrices 
+  arma::mat DW0 = arma::zeros(n_1, n_0);
+  arma::mat DW1 = arma::zeros(n_2, n_1); 
+  arma::mat Db0;
+  arma::mat Db1;
+
+  double* X_batch;
+  double* y_batch;
   // create pointers
   double* d_X;
   double* d_y;
@@ -382,22 +379,22 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   double* d_Dz1;
 
   // malloc
-  checkCudaErrors(cudaMalloc(&d_X, X_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_y, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_W0, W0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_W1, W1_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_b0, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_b1, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_a1, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_a2, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_z1, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_z2, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_DW0, W0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_DW1, W1_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Db0, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Db1, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Da1, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Dz1, b0_size * sizeof(double)));
+  cudaMalloc(&d_X, X_size * sizeof(double));
+  cudaMalloc(&d_y, y_size * sizeof(double));
+  cudaMalloc(&d_W0, W0_size * sizeof(double));
+  cudaMalloc(&d_W1, W1_size * sizeof(double));
+  cudaMalloc(&d_b0, b0_size * sizeof(double));
+  cudaMalloc(&d_b1, y_size * sizeof(double));
+  cudaMalloc(&d_a1, b0_size * sizeof(double));
+  cudaMalloc(&d_a2, y_size * sizeof(double));
+  cudaMalloc(&d_z1, b0_size * sizeof(double));
+  cudaMalloc(&d_z2, y_size * sizeof(double));
+  cudaMalloc(&d_DW0, W0_size * sizeof(double));
+  cudaMalloc(&d_DW1, W1_size * sizeof(double));
+  cudaMalloc(&d_Db0, b0_size * sizeof(double));
+  cudaMalloc(&d_Db1, y_size * sizeof(double));
+  cudaMalloc(&d_Da1, b0_size * sizeof(double));
+  cudaMalloc(&d_Dz1, b0_size * sizeof(double));
   /* iter is a variable used to manage debugging. It increments in the inner loop
      and therefore goes from 0 to epochs*num_batches */
   int iter = 0;
@@ -417,8 +414,10 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       if (rank == 0) {
         // subset by row number
         int last_col = std::min((batch + 1)*batch_size-1, N-1);
-        X_batch = X_t.cols (batch * batch_size, last_col);
-        y_batch = y_t.cols (batch * batch_size, last_col);
+        X_batch = X_t.memptr();
+        y_batch = y_t.memptr();
+        // X_batch = X_t.cols (batch * batch_size, last_col);
+        // y_batch = y_t.cols (batch * batch_size, last_col);
       }
 
       // update every loop
@@ -428,19 +427,19 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       arma::mat b1_t = arma::repmat(nn.b[1].t(), 1, n_images);
 
       // scatter to all GPUS
-      MPI_SAFE_CALL(MPI_Scatter(X_batch.memptr(), X_size, MPI_DOUBLE, X_batch_buffer, 
-                                X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Scatter(y_batch.memptr(), y_size, MPI_DOUBLE, y_batch_buffer, 
-                                y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
+      MPI_Scatter(&(X_batch[batch*batch_size * n_0]), X_size, MPI_DOUBLE, X_batch_buffer, 
+                                X_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+      MPI_Scatter(&(y_batch[batch*batch_size * n_2]), y_size, MPI_DOUBLE, y_batch_buffer, 
+                                y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
       // call kernels to feedforward and backprop on the scattered chunk of data on GPU
       // memcpy
-      checkCudaErrors(cudaMemcpy(d_X, X_batch_buffer, X_size * sizeof(double), cudaMemcpyHostToDevice));
-      checkCudaErrors(cudaMemcpy(d_y, y_batch_buffer, y_size * sizeof(double), cudaMemcpyHostToDevice));
-      checkCudaErrors(cudaMemcpy(d_W0, nn.W[0].memptr(), W0_size * sizeof(double), cudaMemcpyHostToDevice));
-      checkCudaErrors(cudaMemcpy(d_W1, nn.W[1].memptr(), W1_size * sizeof(double), cudaMemcpyHostToDevice));
-      checkCudaErrors(cudaMemcpy(d_b0, b0_t.memptr(), b0_size * sizeof(double), cudaMemcpyHostToDevice));
-      checkCudaErrors(cudaMemcpy(d_b1, b1_t.memptr(), y_size * sizeof(double), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_X, X_batch_buffer, X_size * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_y, y_batch_buffer, y_size * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_W0, nn.W[0].memptr(), W0_size * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_W1, nn.W[1].memptr(), W1_size * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_b0, b0_t.memptr(), b0_size * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_b1, b1_t.memptr(), y_size * sizeof(double), cudaMemcpyHostToDevice);
 
       // FEED-FORWARD steps to calc a1, a2, z1, z2 all on device
       // z1.T = W0 * X.T + b0.T
@@ -472,16 +471,16 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       // Db0.T = Dz1.T ... do nothing
 
       // memcpy
-      checkCudaErrors(cudaMemcpy(DW0_local, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
-      checkCudaErrors(cudaMemcpy(DW1_local, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
-      checkCudaErrors(cudaMemcpy(Db0_t_local, d_Dz1, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
-      checkCudaErrors(cudaMemcpy(Db1_t_local, d_a2, y_size * sizeof(double), cudaMemcpyDeviceToHost));
+      cudaMemcpy(DW0_local, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost);
+      cudaMemcpy(DW1_local, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost);
+      cudaMemcpy(Db0_t_local, d_Dz1, b0_size * sizeof(double), cudaMemcpyDeviceToHost);
+      cudaMemcpy(Db1_t_local, d_a2, y_size * sizeof(double), cudaMemcpyDeviceToHost);
 
       // MPI_Allreduce() on DW0, DW1, Db0_t, Db1_t
-      MPI_SAFE_CALL(MPI_Allreduce(DW0_local, DW0.memptr(), W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Allreduce(DW1_local, DW1.memptr(), W1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Allreduce(Db0_t_local, Db0_t.memptr(), b0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
-      MPI_SAFE_CALL(MPI_Allreduce(Db1_t_local, Db1_t.memptr(), y_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
+      MPI_Allreduce(DW0_local, DW0.memptr(), W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(DW1_local, DW1.memptr(), W1_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(Db0_t_local, Db0_t.memptr(), b0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(Db1_t_local, Db1_t.memptr(), y_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
       // b0 and b1 need to be compressed back to a single vector
       Db0 = arma::sum(Db0_t, 1).t();

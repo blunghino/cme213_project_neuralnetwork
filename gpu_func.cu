@@ -5,6 +5,7 @@
 #include <iostream>
 #include "cublas_v2.h"
 
+#define BLOCK_DIM_X 16
 
 __global__
 void device_add_one (int* d_result, int t)
@@ -765,7 +766,7 @@ void ferrari_GEMM(double* A, double* B, double* C,
 
 int myGEMM(double* A, double* B, double* C, double* alpha, double* beta, int M, int N, int K) {
 
-	const int threads_x = 16;
+	const int threads_x = BLOCK_DIM_X;
 	const int threads_y = 4;
 	const int C_blockDim_y = threads_x * threads_y;
 
@@ -941,7 +942,7 @@ void ferrari_GEMM_no_overwrite_kernel(double* A, double* B, double* C, double* D
 int myGEMM_no_overwrite(double* A, double* B, double* C, double* D,
 							 double alpha, double beta, int M, int N, int K) {
 
-	const int threads_x = 16;
+	const int threads_x = BLOCK_DIM_X;
 	const int threads_y = 4;
 	const int C_blockDim_y = threads_x * threads_y;
 
@@ -1028,7 +1029,7 @@ int myGEMM_no_overwrite_transposeB(double* A, double* B, double* C, double* D,
 							 double alpha, double beta, int M, int N, int K) {
 
 	const int threads_x = 4;
-	const int threads_y = 16;
+	const int threads_y = BLOCK_DIM_X;
 	const int C_blockDim_y = threads_x * threads_y;
 
 	int blocks_x = (N + threads_y -1) / threads_y;
@@ -1116,7 +1117,7 @@ void ferrari_GEMM_no_overwrite_no_add_transposeA_kernel(double* A, double* B, do
 int myGEMM_no_overwrite_no_add_transposeA(double* A, double* B, double* C, 
 							 			 double alpha, int M, int N, int K) {
 
-	const int threads_x = 16;
+	const int threads_x = BLOCK_DIM_X;
 	const int threads_y = 4;
 	const int C_blockDim_y = threads_x * threads_y;
 
