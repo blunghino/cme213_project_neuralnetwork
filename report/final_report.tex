@@ -59,7 +59,7 @@ In this report I analyze the performance and correctness of my neural network. M
 	\begin{minipage}{\linewidth}
 		\centering
 		\begin{tabular}{c|c|c|c}%
-			\bfseries Implementation & \bfseries Network Time [s] & \bfseries GEMM 1 Time [s] & \bfseries GEMM 2 Time [s]% specify table head
+			\bfseries Implementation & \bfseries Neural Network Time & \bfseries GEMM 1 Time & \bfseries GEMM 2 Time % specify table head
 			\csvreader[head to column names]{implementation_results.csv}{}% use head of csv as column names
 			{\\\hline\csvcoli&\csvcolii&\csvcoliii&\csvcoliv}% specify your coloumns here
 		\end{tabular}
@@ -116,7 +116,6 @@ This implementation HAS ANOTHER PROBLEM
 \end{figure}
 
 %\section*{Implementation 4}
-
 
 
 \section*{Correctness Analysis}

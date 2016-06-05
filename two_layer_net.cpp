@@ -301,111 +301,6 @@ int gpu_train(double* X, double* y, double* W0, double* W1, double* b0, double* 
             const int n_images, const int n_0, const int n_1, const int n_2, 
             double reg, double learning_rate, int batch_size) {
 
-  // create pointers
-  double* d_X;
-  double* d_y;
-  double* d_W0;
-  double* d_W1;
-  double* d_b0;
-  double* d_b1;
-  // data only on device
-  double* d_a1;
-  double* d_a2;
-  double* d_z1;
-  double* d_z2;
-  double* d_DW0;
-  double* d_DW1;
-  double* d_Db0;
-  double* d_Db1;
-  double* d_Da1;
-  double* d_Dz1;
-
-  // calc sizes
-  const unsigned int X_size = n_images * n_0; // 800 x 784
-  const unsigned int y_size = n_images * n_2; // 800 x 10
-  const unsigned int W0_size = n_1 * n_0; // 100 x 784
-  const unsigned int W1_size = n_2 * n_1; // 10 x 100
-  const unsigned int b0_size = n_images * n_1; // 800 x 100
-
-  // malloc
-  checkCudaErrors(cudaMalloc(&d_X, X_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_y, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_W0, W0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_W1, W1_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_b0, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_b1, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_a1, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_a2, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_z1, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_z2, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_DW0, W0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_DW1, W1_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Db0, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Db1, y_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Da1, b0_size * sizeof(double)));
-  checkCudaErrors(cudaMalloc(&d_Dz1, b0_size * sizeof(double)));
-
-  // memcpy
-  checkCudaErrors(cudaMemcpy(d_X, X, X_size * sizeof(double), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_y, y, y_size * sizeof(double), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_W0, W0, W0_size * sizeof(double), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_W1, W1, W1_size * sizeof(double), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_b0, b0, b0_size * sizeof(double), cudaMemcpyHostToDevice));
-  checkCudaErrors(cudaMemcpy(d_b1, b1, y_size * sizeof(double), cudaMemcpyHostToDevice));
-
-  // FEED-FORWARD steps to calc a1, a2, z1, z2 all on device
-  // z1.T = W0 * X.T + b0.T
-  myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, 1, 1, n_1, n_images, n_0);
-  
-  // a1.T = sigmoid(z1.T)
-  sigmoid_GPU(d_z1, d_a1, n_1, n_images);
-
-  // z2.T = W1 * a1.T + b1.T
-  myGEMM_no(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
-
-  // a2.T = (softmax(z2.T) - y) / n_images
-  // a2.T now holds the CROSS ENTROPY
-  softmax_GPU(d_z2, d_a2, d_y, n_2, n_images, batch_size);
-
-  // BACKPROP steps to calc dW0-1 and db0-1 all on device
-  // DW1 = CE * a1.T + reg * W1 where CE = "diff"
-  myGEMM_no_tB(d_a2, d_a1, d_W1, d_DW1, 1, reg, n_2, n_1, n_images);
-
-  // Db1.T = a2.T ... do nothing
-  // Da1.T = W1 * a2.T 
-  myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
-
-  // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
-  Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images); 
-
-  // DW0.T = Dz1.T * X.T + reg * W0
-  myGEMM_no_overwrite_transposeB(d_Dz1, d_X, d_W0, d_DW0, 1, reg, n_1, n_0, n_images);
-  // Db0.T = Dz1.T ... do nothing
-
-  // memcpy
-  checkCudaErrors(cudaMemcpy(DW0, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(DW1, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(Db0, d_Dz1, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
-  checkCudaErrors(cudaMemcpy(Db1, d_a2, y_size * sizeof(double), cudaMemcpyDeviceToHost));
-
-  // free!
-  cudaFree(d_X);
-  cudaFree(d_y);
-  cudaFree(d_W0);
-  cudaFree(d_W1);
-  cudaFree(d_b0);
-  cudaFree(d_b1);
-  cudaFree(d_a1);
-  cudaFree(d_a2);
-  cudaFree(d_z1);
-  cudaFree(d_z2);
-  cudaFree(d_DW0);
-  cudaFree(d_DW1);
-  cudaFree(d_Db0);
-  cudaFree(d_Db1);
-  cudaFree(d_Da1);
-  cudaFree(d_Dz1);
-
   return 0;
 }
 
@@ -428,58 +323,96 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
   // broad cast
   MPI_SAFE_CALL (MPI_Bcast (&N, 1, MPI_INT, 0, MPI_COMM_WORLD));
 
+  std::ofstream error_file;
+  error_file.open("Outputs/CpuGpuDiff.txt");
+  int print_flag = 0;
+
   // constant dimensions
   const int n_0 = nn.H[0];
   const int n_1 = nn.H[1];
   const int n_2 = nn.H[2];
-  const int W0_size = n_1 * n_0;
-  const int W1_size = n_2 * n_1;
+
+  int num_batches = (N + batch_size - 1) / batch_size;
+  // dimensions
+  int n_images = batch_size / num_procs;
 
   arma::mat Db0;
   arma::mat Db1;
   arma::mat X_batch;
   arma::mat y_batch;
 
-  std::ofstream error_file;
-  error_file.open("Outputs/CpuGpuDiff.txt");
-  int print_flag = 0;
+  // new matrices 
+  arma::mat Db0_t = arma::zeros(n_1, n_images);
+  arma::mat Db1_t = arma::zeros(n_2, n_images);
+  arma::mat DW0 = arma::zeros(n_1, n_0);
+  arma::mat DW1 = arma::zeros(n_2, n_1);
+
+  // calc sizes
+  int X_size = n_images * n_0; // 800 x 784
+  int y_size = n_images * n_2; // 800 x 10
+  const int W0_size = n_1 * n_0; // 100 x 784
+  const int W1_size = n_2 * n_1; // 10 x 100
+  int b0_size = n_images * n_1; // 800 x 100
+
+  // mallocs
+  double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
+  double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
+  double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
+  double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
+  double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
+  double* Db1_t_local = (double*) malloc(sizeof(double) * y_size);
   
+  // create pointers
+  double* d_X;
+  double* d_y;
+  double* d_W0;
+  double* d_W1;
+  double* d_b0;
+  double* d_b1;
+  // data only on device
+  double* d_a1;
+  double* d_a2;
+  double* d_z1;
+  double* d_z2;
+  double* d_DW0;
+  double* d_DW1;
+  double* d_Db0;
+  double* d_Db1;
+  double* d_Da1;
+  double* d_Dz1;
+
+  // malloc
+  checkCudaErrors(cudaMalloc(&d_X, X_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_y, y_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_W0, W0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_W1, W1_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_b0, b0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_b1, y_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_a1, b0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_a2, y_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_z1, b0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_z2, y_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_DW0, W0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_DW1, W1_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_Db0, b0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_Db1, y_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_Da1, b0_size * sizeof(double)));
+  checkCudaErrors(cudaMalloc(&d_Dz1, b0_size * sizeof(double)));
   /* iter is a variable used to manage debugging. It increments in the inner loop
      and therefore goes from 0 to epochs*num_batches */
   int iter = 0;
 
   for (int epoch = 0; epoch < epochs; ++epoch) {
-
-    int num_batches = (N + batch_size - 1) / batch_size;
     
     for (int batch = 0; batch < num_batches; ++batch) {
-
-      // dimensions
-      int n_images = batch_size / num_procs;
 
       // last batch is different size
       if (batch == num_batches - 1) {
         n_images = (N % batch_size) / num_procs;
+        X_size = n_images * n_0;
+        y_size = n_images * n_2;
+        b0_size = n_images * n_1;
       }
-
-      // new matrices 
-      arma::mat Db0_t = arma::zeros(n_1, n_images);
-      arma::mat Db1_t = arma::zeros(n_2, n_images);
-      arma::mat DW0 = arma::zeros(n_1, n_0);
-      arma::mat DW1 = arma::zeros(n_2, n_1);
-
-      // sizes
-      int X_size = n_images * n_0;
-      int y_size = n_images * n_2;
-      int b0_size = n_1 * n_images;
-
-      // mallocs
-      double* X_batch_buffer = (double*) malloc(sizeof(double) * X_size);
-      double* y_batch_buffer = (double*) malloc(sizeof(double) * y_size);
-      double* DW0_local = (double*) malloc(sizeof(double) * W0_size);
-      double* DW1_local = (double*) malloc(sizeof(double) * W1_size);
-      double* Db0_t_local = (double*) malloc(sizeof(double) * b0_size);
-      double* Db1_t_local = (double*) malloc(sizeof(double) * y_size);
 
       if (rank == 0) {
         // subset by row number
@@ -489,6 +422,8 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       }
 
       // update every loop
+      arma::mat Db0_t = arma::zeros(n_1, n_images);
+      arma::mat Db1_t = arma::zeros(n_2, n_images);
       arma::mat b0_t = arma::repmat(nn.b[0].t(), 1, n_images);
       arma::mat b1_t = arma::repmat(nn.b[1].t(), 1, n_images);
 
@@ -498,13 +433,49 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       MPI_SAFE_CALL(MPI_Scatter(y_batch.memptr(), y_size, MPI_DOUBLE, y_batch_buffer, 
                                 y_size, MPI_DOUBLE, 0, MPI_COMM_WORLD));
 
-      // this function will call kernels to feedforward and backprop on the scattered chunk of data on GPU
-      int gpu_success = gpu_train(X_batch_buffer, y_batch_buffer, 
-                                  nn.W[0].memptr(), nn.W[1].memptr(), 
-                                  b0_t.memptr(), b1_t.memptr(), 
-                                  DW0_local, DW1_local, Db0_t_local, Db1_t_local,
-                                  n_images, n_0, n_1, n_2, reg/(double)num_procs, 
-                                  learning_rate, n_images*num_procs);
+      // call kernels to feedforward and backprop on the scattered chunk of data on GPU
+      // memcpy
+      checkCudaErrors(cudaMemcpy(d_X, X_batch_buffer, X_size * sizeof(double), cudaMemcpyHostToDevice));
+      checkCudaErrors(cudaMemcpy(d_y, y_batch_buffer, y_size * sizeof(double), cudaMemcpyHostToDevice));
+      checkCudaErrors(cudaMemcpy(d_W0, nn.W[0].memptr(), W0_size * sizeof(double), cudaMemcpyHostToDevice));
+      checkCudaErrors(cudaMemcpy(d_W1, nn.W[1].memptr(), W1_size * sizeof(double), cudaMemcpyHostToDevice));
+      checkCudaErrors(cudaMemcpy(d_b0, b0_t.memptr(), b0_size * sizeof(double), cudaMemcpyHostToDevice));
+      checkCudaErrors(cudaMemcpy(d_b1, b1_t.memptr(), y_size * sizeof(double), cudaMemcpyHostToDevice));
+
+      // FEED-FORWARD steps to calc a1, a2, z1, z2 all on device
+      // z1.T = W0 * X.T + b0.T
+      myGEMM_no_overwrite(d_W0, d_X, d_b0, d_z1, 1, 1, n_1, n_images, n_0);
+
+      // a1.T = sigmoid(z1.T)
+      sigmoid_GPU(d_z1, d_a1, n_1, n_images);
+
+      // z2.T = W1 * a1.T + b1.T
+      myGEMM_no(d_W1, d_a1, d_b1, d_z2, 1, 1, n_2, n_images, n_1);
+
+      // a2.T = (softmax(z2.T) - y) / n_images
+      // a2.T now holds the CROSS ENTROPY
+      softmax_GPU(d_z2, d_a2, d_y, n_2, n_images, n_images*num_procs);
+
+      // BACKPROP steps to calc dW0-1 and db0-1 all on device
+      // DW1 = CE * a1.T + reg * W1 where CE = "diff"
+      myGEMM_no_tB(d_a2, d_a1, d_W1, d_DW1, 1, reg/(double)num_procs, n_2, n_1, n_images);
+
+      // Db1.T = a2.T ... do nothing
+      // Da1.T = W1 * a2.T 
+      myGEMM_no_overwrite_no_add_transposeA(d_W1, d_a2, d_Da1, 1, n_1, n_images, n_2);
+
+      // Dz1.T = Da1.T .* a1.T .* (1 - a1.T)
+      Dz1_schur_GPU(d_Da1, d_a1, d_Dz1, n_1, n_images); 
+
+      // DW0.T = Dz1.T * X.T + reg * W0
+      myGEMM_no_overwrite_transposeB(d_Dz1, d_X, d_W0, d_DW0, 1, reg/(double)num_procs, n_1, n_0, n_images);
+      // Db0.T = Dz1.T ... do nothing
+
+      // memcpy
+      checkCudaErrors(cudaMemcpy(DW0_local, d_DW0, W0_size * sizeof(double), cudaMemcpyDeviceToHost));
+      checkCudaErrors(cudaMemcpy(DW1_local, d_DW1, W1_size * sizeof(double), cudaMemcpyDeviceToHost));
+      checkCudaErrors(cudaMemcpy(Db0_t_local, d_Dz1, b0_size * sizeof(double), cudaMemcpyDeviceToHost));
+      checkCudaErrors(cudaMemcpy(Db1_t_local, d_a2, y_size * sizeof(double), cudaMemcpyDeviceToHost));
 
       // MPI_Allreduce() on DW0, DW1, Db0_t, Db1_t
       MPI_SAFE_CALL(MPI_Allreduce(DW0_local, DW0.memptr(), W0_size, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD));
@@ -532,18 +503,44 @@ void parallel_train (TwoLayerNet &nn, const arma::mat& X, const arma::mat& y, do
       if(debug && rank == 0 && print_flag)
         write_diff_gpu_cpu(nn, iter, error_file);
 
-      // freeze
-      free(X_batch_buffer);
-      free(y_batch_buffer);
-      free(DW0_local);
-      free(DW1_local);
-      free(Db0_t_local);
-      free(Db1_t_local);
+      // reset n_images
+      if (batch == num_batches - 1) {
+        n_images = batch_size / num_procs;
+        X_size = n_images * n_0;
+        y_size = n_images * n_2;
+        b0_size = n_images * n_1;
+      }
 
       iter++;
 
     }
   }
+
+  // freeze
+  free(X_batch_buffer);
+  free(y_batch_buffer);
+  free(DW0_local);
+  free(DW1_local);
+  free(Db0_t_local);
+  free(Db1_t_local);
+
+  // free!
+  cudaFree(d_X);
+  cudaFree(d_y);
+  cudaFree(d_W0);
+  cudaFree(d_W1);
+  cudaFree(d_b0);
+  cudaFree(d_b1);
+  cudaFree(d_a1);
+  cudaFree(d_a2);
+  cudaFree(d_z1);
+  cudaFree(d_z2);
+  cudaFree(d_DW0);
+  cudaFree(d_DW1);
+  cudaFree(d_Db0);
+  cudaFree(d_Db1);
+  cudaFree(d_Da1);
+  cudaFree(d_Dz1);
 
   error_file.close();
 }
